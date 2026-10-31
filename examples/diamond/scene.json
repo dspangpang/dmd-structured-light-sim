@@ -1,0 +1,82 @@
+{
+  "schema": "dmd-sim.scene.v1",
+  "camera": {
+    "resolution": [
+      320,
+      240
+    ],
+    "pixel_pitch_um": 10.0,
+    "focal_length_mm": 4.0,
+    "position_m": [
+      0.04,
+      0,
+      0.5
+    ],
+    "look_at_m": [
+      0,
+      0,
+      0
+    ]
+  },
+  "projector": {
+    "type": "diamond",
+    "resolution": [
+      912,
+      1140
+    ],
+    "pixel_pitch_um": 7.56,
+    "focal_length_mm": 6.0,
+    "position_m": [
+      0,
+      0,
+      0.5
+    ],
+    "look_at_m": [
+      0,
+      0,
+      0
+    ]
+  },
+  "patterns": {
+    "kind": "sinusoidal",
+    "period_px": 64.0,
+    "phase_steps": 4,
+    "axis": "x"
+  },
+  "target": {
+    "primitive": {
+      "shape": "plane",
+      "size_m": [
+        0.5,
+        0.38,
+        0.001
+      ]
+    },
+    "center_world_m": [
+      0,
+      0,
+      0
+    ],
+    "material": {
+      "albedo": 0.8,
+      "roughness": 1.0,
+      "metallic": 0.0,
+      "use_ply_brdf": false
+    }
+  },
+  "render": {
+    "samples": 8,
+    "use_gpu": false,
+    "threads": 2,
+    "denoising": false,
+    "projector_energy": 3.0,
+    "projector_texture_interpolation": "Closest",
+    "bounce_level": "off",
+    "save_float_exr": true
+  },
+  "capture": {
+    "projector_image_format": "PNG",
+    "save_depth": true,
+    "save_pointcloud": true
+  }
+}

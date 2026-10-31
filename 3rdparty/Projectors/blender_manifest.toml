@@ -1,0 +1,28 @@
+schema_version = "1.0.0"
+id = "projector"
+version = "2026.2.9"
+name = "Projector"
+tagline = "Easy projector creation and modification for Blender"
+maintainer = "Jonas Schell"
+type = "add-on"
+
+website = "https://github.com/Ocupe/Projectors"
+tags = ["Lighting", "Camera"]
+
+blender_version_min = "4.2.0"
+
+license = ["SPDX:GPL-3.0-or-later"]
+copyright = ["2024 Jonas Schell"]
+
+[build]
+paths_exclude_pattern = [
+    "__pycache__/",
+    ".git/",
+    "*.zip",
+    ".github/",
+    "Pipfile",
+    "Pipfile.lock",
+    "tests.py",
+    "builds/",
+    "release.sh",
+]

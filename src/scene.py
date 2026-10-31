@@ -1,0 +1,1289 @@
+import bpy
+import math
+import os
+from config import SimConfig
+from cleanup import delete_all_objects
+from projector import add_projector
+from pixel_coordinates import camera_lens_shift
+from mathutils import Matrix, Vector, Euler
+from variant_api import get_variant
+from rig_topology import (
+    camera_specs,
+    projector_name,
+    projector_local_rotation_matrix,
+)
+from rig_geometry import projector_world_position
+
+
+CALIBRATION_BOARD_TAG = "calibration_circle_grid"
+CALIBRATION_CHECKERBOARD_TAG = "calibration_checkerboard"
+
+
+def _resolve_repo_path(path):
+    if not path:
+        return None
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    if path.startswith("//"):
+        return os.path.join(repo_root, path[2:])
+    if os.path.isabs(path):
+        return path
+    return os.path.join(repo_root, path)
+
+
+def _ensure_uv_map(obj, uv_name="UVMap"):
+    mesh = obj.data
+    if not mesh.uv_layers:
+        mesh.uv_layers.new(name=uv_name)
+    if uv_name in mesh.uv_layers:
+        mesh.uv_layers.active = mesh.uv_layers[uv_name]
+    else:
+        mesh.uv_layers.active = mesh.uv_layers[0]
+    mesh.uv_layers.active_index = mesh.uv_layers.active_index
+    if hasattr(mesh.uv_layers, "active_render"):
+        mesh.uv_layers.active_render = mesh.uv_layers.active
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=66.0, island_margin=0.02)
+    bpy.ops.uv.average_islands_scale()
+    bpy.ops.uv.pack_islands(margin=0.02)
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+    uv_layer = mesh.uv_layers.active
+    if uv_layer is None:
+        raise RuntimeError("[Scene] UV layer missing after unwrap.")
+    uvs = [loop.uv for loop in uv_layer.data]
+    if not uvs:
+        raise RuntimeError("[Scene] UV data empty after unwrap.")
+    min_u = min(uv.x for uv in uvs)
+    max_u = max(uv.x for uv in uvs)
+    min_v = min(uv.y for uv in uvs)
+    max_v = max(uv.y for uv in uvs)
+    print(f"[Scene] UV bounds: U[{min_u:.4f},{max_u:.4f}] V[{min_v:.4f},{max_v:.4f}]")
+    if (max_u - min_u) < 1e-4 or (max_v - min_v) < 1e-4:
+        raise RuntimeError("[Scene] UVs collapsed to a line/point after unwrap.")
+
+
+def _bake_channel_to_image(
+    obj,
+    nt,
+    emission_node,
+    image_name,
+    image_size,
+    image_dir,
+    colorspace,
+    socket,
+):
+    image = bpy.data.images.new(image_name, width=image_size, height=image_size, alpha=False)
+    image.filepath_raw = os.path.join(image_dir, f"{image_name}.png")
+    image.file_format = "PNG"
+    image.colorspace_settings.name = colorspace
+
+    image_node = nt.nodes.new("ShaderNodeTexImage")
+    image_node.image = image
+    image_node.select = True
+    nt.nodes.active = image_node
+
+    bake_link = nt.links.new(socket, emission_node.inputs["Color"])
+    bpy.ops.object.bake(type="EMIT")
+    image.save()
+
+    nt.links.remove(bake_link)
+    nt.nodes.remove(image_node)
+    return image
+
+
+def _bake_vertex_pbr_maps(obj, bake_dir, image_size=1024):
+    mesh = obj.data
+    has_scalar_attrs = all(
+        name in mesh.attributes for name in ("albedo", "roughness", "metallic")
+    )
+    has_color_attrs = bool(mesh.color_attributes)
+    if not has_scalar_attrs and not has_color_attrs:
+        raise RuntimeError(
+            "[Scene] Missing PLY BRDF attributes: require albedo/roughness/metallic."
+        )
+
+    os.makedirs(bake_dir, exist_ok=True)
+
+    scene = bpy.context.scene
+    scene.render.engine = "CYCLES"
+    scene.render.bake.use_clear = True
+    scene.render.bake.use_selected_to_active = False
+    scene.render.bake.margin = 2
+
+    mat = bpy.data.materials.new("VertexPBR_Bake")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+
+    output = nt.nodes.new("ShaderNodeOutputMaterial")
+    emission = nt.nodes.new("ShaderNodeEmission")
+    combine = nt.nodes.new("ShaderNodeCombineRGB")
+
+    nt.links.new(emission.outputs["Emission"], output.inputs["Surface"])
+
+    obj.data.materials.clear()
+    obj.data.materials.append(mat)
+
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+
+    combine.inputs["R"].default_value = 0.0
+    combine.inputs["G"].default_value = 0.0
+    combine.inputs["B"].default_value = 0.0
+
+    if has_scalar_attrs:
+        attr_albedo = nt.nodes.new("ShaderNodeAttribute")
+        attr_roughness = nt.nodes.new("ShaderNodeAttribute")
+        attr_metallic = nt.nodes.new("ShaderNodeAttribute")
+        attr_albedo.attribute_name = "albedo"
+        attr_roughness.attribute_name = "roughness"
+        attr_metallic.attribute_name = "metallic"
+
+        link_r = nt.links.new(attr_albedo.outputs["Fac"], combine.inputs["R"])
+        link_g = nt.links.new(attr_albedo.outputs["Fac"], combine.inputs["G"])
+        link_b = nt.links.new(attr_albedo.outputs["Fac"], combine.inputs["B"])
+        albedo = _bake_channel_to_image(
+            obj,
+            nt,
+            emission,
+            "baked_albedo",
+            image_size,
+            bake_dir,
+            "sRGB",
+            combine.outputs["Image"],
+        )
+        nt.links.remove(link_r)
+        nt.links.remove(link_g)
+        nt.links.remove(link_b)
+
+        link_r = nt.links.new(attr_roughness.outputs["Fac"], combine.inputs["R"])
+        link_g = nt.links.new(attr_roughness.outputs["Fac"], combine.inputs["G"])
+        link_b = nt.links.new(attr_roughness.outputs["Fac"], combine.inputs["B"])
+        roughness = _bake_channel_to_image(
+            obj,
+            nt,
+            emission,
+            "baked_roughness",
+            image_size,
+            bake_dir,
+            "Non-Color",
+            combine.outputs["Image"],
+        )
+        nt.links.remove(link_r)
+        nt.links.remove(link_g)
+        nt.links.remove(link_b)
+
+        nt.links.new(attr_metallic.outputs["Fac"], combine.inputs["R"])
+        nt.links.new(attr_metallic.outputs["Fac"], combine.inputs["G"])
+        nt.links.new(attr_metallic.outputs["Fac"], combine.inputs["B"])
+        metallic = _bake_channel_to_image(
+            obj,
+            nt,
+            emission,
+            "baked_metallic",
+            image_size,
+            bake_dir,
+            "Non-Color",
+            combine.outputs["Image"],
+        )
+    else:
+        color_attr = mesh.color_attributes.active or mesh.color_attributes[0]
+        attr = nt.nodes.new("ShaderNodeAttribute")
+        attr.attribute_name = color_attr.name
+        separate = nt.nodes.new("ShaderNodeSeparateRGB")
+        nt.links.new(attr.outputs["Color"], separate.inputs["Image"])
+
+        # Treat vertex color channels as scalar PBR parameters: R=albedo, G=roughness, B=metallic.
+        link_r = nt.links.new(separate.outputs["R"], combine.inputs["R"])
+        link_g = nt.links.new(separate.outputs["R"], combine.inputs["G"])
+        link_b = nt.links.new(separate.outputs["R"], combine.inputs["B"])
+        albedo = _bake_channel_to_image(
+            obj,
+            nt,
+            emission,
+            "baked_albedo",
+            image_size,
+            bake_dir,
+            "sRGB",
+            combine.outputs["Image"],
+        )
+        nt.links.remove(link_r)
+        nt.links.remove(link_g)
+        nt.links.remove(link_b)
+
+        link_r = nt.links.new(separate.outputs["G"], combine.inputs["R"])
+        link_g = nt.links.new(separate.outputs["G"], combine.inputs["G"])
+        link_b = nt.links.new(separate.outputs["G"], combine.inputs["B"])
+        roughness = _bake_channel_to_image(
+            obj,
+            nt,
+            emission,
+            "baked_roughness",
+            image_size,
+            bake_dir,
+            "Non-Color",
+            combine.outputs["Image"],
+        )
+        nt.links.remove(link_r)
+        nt.links.remove(link_g)
+        nt.links.remove(link_b)
+
+        nt.links.new(separate.outputs["B"], combine.inputs["R"])
+        nt.links.new(separate.outputs["B"], combine.inputs["G"])
+        nt.links.new(separate.outputs["B"], combine.inputs["B"])
+        metallic = _bake_channel_to_image(
+            obj,
+            nt,
+            emission,
+            "baked_metallic",
+            image_size,
+            bake_dir,
+            "Non-Color",
+            combine.outputs["Image"],
+        )
+
+    return {
+        "albedo": albedo,
+        "roughness": roughness,
+        "metallic": metallic,
+    }
+
+
+def _build_principled_material(baked_images):
+    mat = bpy.data.materials.new("Baked_PBR_Mat")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    tex_coord = nt.nodes.new("ShaderNodeTexCoord")
+    mapping = nt.nodes.new("ShaderNodeMapping")
+
+    nt.links.new(tex_coord.outputs["UV"], mapping.inputs["Vector"])
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+
+    if baked_images.get("albedo"):
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image = baked_images["albedo"]
+        nt.links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
+        nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+
+    if baked_images.get("roughness"):
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image = baked_images["roughness"]
+        tex.image.colorspace_settings.name = "Non-Color"
+        nt.links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
+        nt.links.new(tex.outputs["Color"], bsdf.inputs["Roughness"])
+
+    if baked_images.get("metallic"):
+        tex = nt.nodes.new("ShaderNodeTexImage")
+        tex.image = baked_images["metallic"]
+        tex.image.colorspace_settings.name = "Non-Color"
+        nt.links.new(mapping.outputs["Vector"], tex.inputs["Vector"])
+        nt.links.new(tex.outputs["Color"], bsdf.inputs["Metallic"])
+
+    return mat
+
+
+def add_camera(
+    cfg: SimConfig,
+    name,
+    loc,
+    parent=None,
+    yaw_deg=0.0,
+    rotation_matrix=None,
+    intrinsic_matrix=None,
+    yaw_deg_inward=None,
+    is_left=True,
+):
+    bpy.ops.object.camera_add(location=(0.0, 0.0, 0.0), rotation=(0, 0, 0))
+    cam = bpy.context.object
+    cam.name = name
+    if parent is not None:
+        cam.parent = parent
+    cam.location = loc
+
+    cam.data.lens = cfg.f_mm
+    cam.data.sensor_width = cfg.sensor_w
+    cam.data.sensor_height = cfg.sensor_h
+    cam.data.sensor_fit = "HORIZONTAL" if cfg.RES_X >= cfg.RES_Y else "VERTICAL"
+    intrinsic = intrinsic_matrix or cfg.CAMERA_INTRINSIC_MATRIX_PX
+    if intrinsic is None:
+        raise ValueError(f"Camera {name} has no imported intrinsic matrix")
+    cam.data.shift_x, cam.data.shift_y = camera_lens_shift(
+        float(intrinsic[0][2]), float(intrinsic[1][2]), cfg.RES_X, cfg.RES_Y
+    )
+    cam.data.clip_start = cfg.CAMERA_NEAR_CLIP
+    cam.data.clip_end = 100.0
+
+    if rotation_matrix is not None:
+        cam.matrix_basis = (
+            Matrix.Translation(Vector(loc)) @ Matrix(rotation_matrix).to_4x4()
+        )
+    elif yaw_deg_inward is not None:
+        yaw_deg = -yaw_deg_inward if is_left else +yaw_deg_inward
+        cam.rotation_euler = (math.pi, math.radians(yaw_deg), 0.0)
+    else:
+        cam.rotation_euler = (math.pi, math.radians(yaw_deg), 0.0)
+    return cam
+
+
+def _coerce_xyz(value, default):
+    if value is None:
+        value = default
+    coords = tuple(float(v) for v in value)
+    if len(coords) != 3:
+        raise ValueError(f"Expected 3 coordinates, got: {value}")
+    return coords
+
+
+def add_overview_camera(cfg: SimConfig):
+    loc = Vector(
+        _coerce_xyz(
+            getattr(cfg, "OVERVIEW_CAMERA_LOCATION", None),
+            (0.65, -0.85, 0.35),
+        )
+    )
+    look_at = Vector(
+        _coerce_xyz(
+            getattr(cfg, "OVERVIEW_CAMERA_LOOK_AT", None),
+            (-0.08, 0.0, -0.14),
+        )
+    )
+    direction = look_at - loc
+    if direction.length <= 1.0e-9:
+        raise ValueError("[Scene] Overview camera location and look-at point overlap.")
+
+    bpy.ops.object.camera_add(location=tuple(loc), rotation=(0.0, 0.0, 0.0))
+    cam = bpy.context.object
+    cam.name = getattr(cfg, "OVERVIEW_CAMERA_NAME", "overview_camera")
+    cam.rotation_euler = direction.to_track_quat("-Z", "Y").to_euler()
+    cam.data.lens = float(getattr(cfg, "OVERVIEW_CAMERA_LENS_MM", 32.0))
+    cam.data.sensor_width = float(getattr(cfg, "OVERVIEW_CAMERA_SENSOR_WIDTH", 36.0))
+    cam.data.sensor_fit = "HORIZONTAL" if cfg.RES_X >= cfg.RES_Y else "VERTICAL"
+    cam.data.clip_start = cfg.CAMERA_NEAR_CLIP
+    cam.data.clip_end = 100.0
+    return cam
+
+def add_target_plane(
+    size_xy=(0.15, 0.15),
+    center=(0.0, 0.0, 0.0),
+    square_size=0.02,
+    color1=(1, 1, 1, 1),
+    color2=(0, 0, 0, 1),
+):
+    sx, sy = size_xy
+
+    bpy.ops.mesh.primitive_plane_add(size=1.0, location=center)
+    plane = bpy.context.object
+    plane.name = "Target_Plane"
+    plane.rotation_euler = (math.pi, 0.0, 0.0)
+    plane.dimensions = (sx, sy, 0.0)
+
+    # solid material (no texture)
+    mat = bpy.data.materials.new("Solid_Plane_Mat")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Roughness"].default_value = 1.0
+    bsdf.inputs["Base Color"].default_value = color1
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+
+    plane.data.materials.clear()
+    plane.data.materials.append(mat)
+    return plane
+
+
+def add_target_box(
+    size_xyz=(0.15, 0.15, 0.15),
+    center=(0.0, 0.0, 0.0),
+    square_size=0.02,
+    color1=(1, 1, 1, 1),
+    color2=(0, 0, 0, 1),
+):
+    sx, sy, sz = size_xyz
+
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=center)
+    box = bpy.context.object
+    box.name = "Target_Box"
+    box.rotation_euler = (math.pi, 0.0, 0.0)
+    box.dimensions = (sx, sy, sz)
+
+    mat = bpy.data.materials.new("Solid_Box_Mat")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Roughness"].default_value = 1.0
+    bsdf.inputs["Base Color"].default_value = color1
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+
+    box.data.materials.clear()
+    box.data.materials.append(mat)
+    return box
+
+
+def add_target_cylinder(
+    radius=0.1,
+    depth=0.1,
+    center=(0.0, 0.0, 0.0),
+    color=(0.8, 0.8, 0.8, 1.0),
+    axis="z",
+):
+    bpy.ops.mesh.primitive_cylinder_add(radius=radius, depth=depth, location=center)
+    cyl = bpy.context.object
+    cyl.name = "Target_Cylinder"
+    axis = (axis or "z").lower()
+    if axis == "x":
+        cyl.rotation_euler = (0.0, math.pi / 2.0, 0.0)
+    elif axis == "y":
+        cyl.rotation_euler = (math.pi / 2.0, 0.0, 0.0)
+    else:
+        cyl.rotation_euler = (0.0, 0.0, 0.0)
+
+    mat = bpy.data.materials.new("Solid_Cyl_Mat")
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Roughness"].default_value = 1.0
+    bsdf.inputs["Base Color"].default_value = color
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+
+    cyl.data.materials.clear()
+    cyl.data.materials.append(mat)
+    return cyl
+
+
+def _solid_material(name, color, roughness=1.0):
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Base Color"].default_value = color
+    bsdf.inputs["Roughness"].default_value = roughness
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+    return mat
+
+
+def _material_math_node(node_tree, operation, name, second_input=None):
+    node = node_tree.nodes.new("ShaderNodeMath")
+    node.operation = operation
+    node.name = name
+    node.label = name
+    if second_input is not None:
+        node.inputs[1].default_value = float(second_input)
+    return node
+
+
+def _printed_circle_grid_material(
+    width,
+    height,
+    spacing,
+    dot_radius,
+    circle_centers,
+):
+    """Build an analytic, coplanar white-circle print on a black board surface."""
+    if width <= 0.0 or height <= 0.0 or spacing <= 0.0 or dot_radius <= 0.0:
+        raise ValueError("Calibration circle-grid dimensions must be positive")
+    if dot_radius >= spacing * 0.5:
+        raise ValueError("Calibration circle-grid dots must not overlap")
+
+    centers = [(float(x), float(y), float(z)) for x, y, z in circle_centers]
+    if any(not math.isclose(z, 0.0, rel_tol=0.0, abs_tol=1.0e-12) for _x, _y, z in centers):
+        raise ValueError("Printed calibration circle centers must lie on the board z=0 plane")
+    x_values = sorted({x for x, _y, _z in centers})
+    y_values = sorted({y for _x, y, _z in centers})
+    if len(x_values) != 9 or len(y_values) != 7:
+        raise ValueError("Printed calibration circle grid must contain 9 columns and 7 rows")
+    for values, axis in ((x_values, "x"), (y_values, "y")):
+        if any(
+            not math.isclose(right - left, spacing, rel_tol=0.0, abs_tol=1.0e-9)
+            for left, right in zip(values, values[1:])
+        ):
+            raise ValueError(f"Printed calibration circle-grid {axis} spacing is inconsistent")
+
+    mat = bpy.data.materials.new("Calibration_Circle_Grid_Printed")
+    mat.use_nodes = True
+    mat["pattern_type"] = "coplanar_printed_circle_grid"
+    mat["dot_surface_offset_m"] = 0.0
+    mat["dot_radius_m"] = dot_radius
+    mat["dot_spacing_m"] = spacing
+    node_tree = mat.node_tree
+    node_tree.nodes.clear()
+
+    output = node_tree.nodes.new("ShaderNodeOutputMaterial")
+    output.name = "PrintedCircleGrid_Output"
+    bsdf = node_tree.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.name = "PrintedCircleGrid_BSDF"
+    bsdf.inputs["Roughness"].default_value = 1.0
+    if "Specular IOR Level" in bsdf.inputs:
+        bsdf.inputs["Specular IOR Level"].default_value = 0.0
+    elif "Specular" in bsdf.inputs:
+        bsdf.inputs["Specular"].default_value = 0.0
+    tex_coord = node_tree.nodes.new("ShaderNodeTexCoord")
+    tex_coord.name = "PrintedCircleGrid_Coordinates"
+    separate = node_tree.nodes.new("ShaderNodeSeparateXYZ")
+    separate.name = "PrintedCircleGrid_SeparateXYZ"
+    node_tree.links.new(tex_coord.outputs["Generated"], separate.inputs["Vector"])
+
+    def local_coordinate(axis_output, extent, axis_name):
+        scaled = _material_math_node(
+            node_tree,
+            "MULTIPLY",
+            f"PrintedCircleGrid_{axis_name}_Scale",
+            extent,
+        )
+        centered = _material_math_node(
+            node_tree,
+            "SUBTRACT",
+            f"PrintedCircleGrid_{axis_name}_Center",
+            extent * 0.5,
+        )
+        node_tree.links.new(axis_output, scaled.inputs[0])
+        node_tree.links.new(scaled.outputs[0], centered.inputs[0])
+        return centered.outputs[0]
+
+    local_x = local_coordinate(separate.outputs["X"], width, "X")
+    local_y = local_coordinate(separate.outputs["Y"], height, "Y")
+
+    def squared_distance_to_grid_line(local_value, minimum, axis_name):
+        shifted = _material_math_node(
+            node_tree,
+            "ADD",
+            f"PrintedCircleGrid_{axis_name}_Shift",
+            -minimum + spacing * 0.5,
+        )
+        modulo = _material_math_node(
+            node_tree,
+            "MODULO",
+            f"PrintedCircleGrid_{axis_name}_Modulo",
+            spacing,
+        )
+        centered = _material_math_node(
+            node_tree,
+            "SUBTRACT",
+            f"PrintedCircleGrid_{axis_name}_NearestCenter",
+            spacing * 0.5,
+        )
+        squared = _material_math_node(
+            node_tree,
+            "MULTIPLY",
+            f"PrintedCircleGrid_{axis_name}_SquaredDistance",
+        )
+        node_tree.links.new(local_value, shifted.inputs[0])
+        node_tree.links.new(shifted.outputs[0], modulo.inputs[0])
+        node_tree.links.new(modulo.outputs[0], centered.inputs[0])
+        node_tree.links.new(centered.outputs[0], squared.inputs[0])
+        node_tree.links.new(centered.outputs[0], squared.inputs[1])
+        return squared.outputs[0]
+
+    squared_x = squared_distance_to_grid_line(local_x, x_values[0], "X")
+    squared_y = squared_distance_to_grid_line(local_y, y_values[0], "Y")
+    squared_radius = _material_math_node(
+        node_tree,
+        "ADD",
+        "PrintedCircleGrid_SquaredRadius",
+    )
+    circle_mask = _material_math_node(
+        node_tree,
+        "LESS_THAN",
+        "PrintedCircleGrid_CircleMask",
+        dot_radius * dot_radius,
+    )
+    node_tree.links.new(squared_x, squared_radius.inputs[0])
+    node_tree.links.new(squared_y, squared_radius.inputs[1])
+    node_tree.links.new(squared_radius.outputs[0], circle_mask.inputs[0])
+
+    def bounded_axis_mask(local_value, minimum, maximum, axis_name):
+        lower = _material_math_node(
+            node_tree,
+            "GREATER_THAN",
+            f"PrintedCircleGrid_{axis_name}_LowerBound",
+            minimum - spacing * 0.5,
+        )
+        upper = _material_math_node(
+            node_tree,
+            "LESS_THAN",
+            f"PrintedCircleGrid_{axis_name}_UpperBound",
+            maximum + spacing * 0.5,
+        )
+        bounded = _material_math_node(
+            node_tree,
+            "MULTIPLY",
+            f"PrintedCircleGrid_{axis_name}_Bounded",
+        )
+        node_tree.links.new(local_value, lower.inputs[0])
+        node_tree.links.new(local_value, upper.inputs[0])
+        node_tree.links.new(lower.outputs[0], bounded.inputs[0])
+        node_tree.links.new(upper.outputs[0], bounded.inputs[1])
+        return bounded.outputs[0]
+
+    x_bounded = bounded_axis_mask(local_x, x_values[0], x_values[-1], "X")
+    y_bounded = bounded_axis_mask(local_y, y_values[0], y_values[-1], "Y")
+    grid_bounds = _material_math_node(
+        node_tree,
+        "MULTIPLY",
+        "PrintedCircleGrid_BoundsMask",
+    )
+    bounded_circles = _material_math_node(
+        node_tree,
+        "MULTIPLY",
+        "PrintedCircleGrid_BoundedCircleMask",
+    )
+    front_mask = _material_math_node(
+        node_tree,
+        "GREATER_THAN",
+        "PrintedCircleGrid_FrontSurfaceMask",
+        1.0 - 1.0e-6,
+    )
+    printed_mask = _material_math_node(
+        node_tree,
+        "MULTIPLY",
+        "PrintedCircleGrid_PrintedMask",
+    )
+    node_tree.links.new(x_bounded, grid_bounds.inputs[0])
+    node_tree.links.new(y_bounded, grid_bounds.inputs[1])
+    node_tree.links.new(circle_mask.outputs[0], bounded_circles.inputs[0])
+    node_tree.links.new(grid_bounds.outputs[0], bounded_circles.inputs[1])
+    node_tree.links.new(separate.outputs["Z"], front_mask.inputs[0])
+    node_tree.links.new(bounded_circles.outputs[0], printed_mask.inputs[0])
+    node_tree.links.new(front_mask.outputs[0], printed_mask.inputs[1])
+
+    color_mix = node_tree.nodes.new("ShaderNodeMixRGB")
+    color_mix.name = "PrintedCircleGrid_Color"
+    color_mix.blend_type = "MIX"
+    color_mix.inputs[1].default_value = (0.0, 0.0, 0.0, 1.0)
+    color_mix.inputs[2].default_value = (1.0, 1.0, 1.0, 1.0)
+    node_tree.links.new(printed_mask.outputs[0], color_mix.inputs[0])
+    node_tree.links.new(color_mix.outputs["Color"], bsdf.inputs["Base Color"])
+    node_tree.links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
+    return mat
+
+
+def _printed_checkerboard_material(
+    width,
+    height,
+    inner_cols,
+    inner_rows,
+    square_size,
+):
+    """Build a coplanar printed checkerboard on the board's front surface."""
+    square_cols = int(inner_cols) + 1
+    square_rows = int(inner_rows) + 1
+    pattern_width = square_cols * float(square_size)
+    pattern_height = square_rows * float(square_size)
+    if min(width, height, square_size) <= 0.0:
+        raise ValueError("Calibration checkerboard dimensions must be positive")
+    if pattern_width > width + 1.0e-12 or pattern_height > height + 1.0e-12:
+        raise ValueError("Calibration checkerboard pattern exceeds the board surface")
+
+    mat = bpy.data.materials.new("Calibration_Checkerboard_Printed")
+    mat.use_nodes = True
+    mat["pattern_type"] = "coplanar_printed_checkerboard"
+    mat["square_surface_offset_m"] = 0.0
+    mat["square_size_m"] = float(square_size)
+    node_tree = mat.node_tree
+    node_tree.nodes.clear()
+
+    output = node_tree.nodes.new("ShaderNodeOutputMaterial")
+    output.name = "PrintedCheckerboard_Output"
+    bsdf = node_tree.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.name = "PrintedCheckerboard_BSDF"
+    bsdf.inputs["Roughness"].default_value = 1.0
+    if "Specular IOR Level" in bsdf.inputs:
+        bsdf.inputs["Specular IOR Level"].default_value = 0.0
+    elif "Specular" in bsdf.inputs:
+        bsdf.inputs["Specular"].default_value = 0.0
+
+    tex_coord = node_tree.nodes.new("ShaderNodeTexCoord")
+    tex_coord.name = "PrintedCheckerboard_Coordinates"
+    separate = node_tree.nodes.new("ShaderNodeSeparateXYZ")
+    separate.name = "PrintedCheckerboard_SeparateXYZ"
+    node_tree.links.new(tex_coord.outputs["Generated"], separate.inputs["Vector"])
+
+    def local_coordinate(axis_output, extent, axis_name):
+        scaled = _material_math_node(
+            node_tree, "MULTIPLY", f"PrintedCheckerboard_{axis_name}_Scale", extent
+        )
+        centered = _material_math_node(
+            node_tree,
+            "SUBTRACT",
+            f"PrintedCheckerboard_{axis_name}_Center",
+            extent * 0.5,
+        )
+        node_tree.links.new(axis_output, scaled.inputs[0])
+        node_tree.links.new(scaled.outputs[0], centered.inputs[0])
+        return centered.outputs[0]
+
+    local_x = local_coordinate(separate.outputs["X"], width, "X")
+    local_y = local_coordinate(separate.outputs["Y"], height, "Y")
+    x_min = -0.5 * pattern_width
+    y_min = -0.5 * pattern_height
+
+    def square_index(local_value, minimum, axis_name):
+        shifted = _material_math_node(
+            node_tree,
+            "ADD",
+            f"PrintedCheckerboard_{axis_name}_Shift",
+            -minimum,
+        )
+        divided = _material_math_node(
+            node_tree,
+            "DIVIDE",
+            f"PrintedCheckerboard_{axis_name}_Divide",
+            square_size,
+        )
+        floored = _material_math_node(
+            node_tree, "FLOOR", f"PrintedCheckerboard_{axis_name}_Index"
+        )
+        node_tree.links.new(local_value, shifted.inputs[0])
+        node_tree.links.new(shifted.outputs[0], divided.inputs[0])
+        node_tree.links.new(divided.outputs[0], floored.inputs[0])
+        return floored.outputs[0]
+
+    x_index = square_index(local_x, x_min, "X")
+    y_index = square_index(local_y, y_min, "Y")
+    index_sum = _material_math_node(node_tree, "ADD", "PrintedCheckerboard_IndexSum")
+    parity = _material_math_node(
+        node_tree, "MODULO", "PrintedCheckerboard_Parity", 2.0
+    )
+    black_parity = _material_math_node(
+        node_tree, "LESS_THAN", "PrintedCheckerboard_BlackParity", 0.5
+    )
+    node_tree.links.new(x_index, index_sum.inputs[0])
+    node_tree.links.new(y_index, index_sum.inputs[1])
+    node_tree.links.new(index_sum.outputs[0], parity.inputs[0])
+    node_tree.links.new(parity.outputs[0], black_parity.inputs[0])
+
+    def bounded_axis(local_value, minimum, maximum, axis_name):
+        lower = _material_math_node(
+            node_tree,
+            "GREATER_THAN",
+            f"PrintedCheckerboard_{axis_name}_LowerBound",
+            minimum - 1.0e-9,
+        )
+        upper = _material_math_node(
+            node_tree,
+            "LESS_THAN",
+            f"PrintedCheckerboard_{axis_name}_UpperBound",
+            maximum,
+        )
+        bounded = _material_math_node(
+            node_tree, "MULTIPLY", f"PrintedCheckerboard_{axis_name}_Bounded"
+        )
+        node_tree.links.new(local_value, lower.inputs[0])
+        node_tree.links.new(local_value, upper.inputs[0])
+        node_tree.links.new(lower.outputs[0], bounded.inputs[0])
+        node_tree.links.new(upper.outputs[0], bounded.inputs[1])
+        return bounded.outputs[0]
+
+    x_bounded = bounded_axis(local_x, x_min, -x_min, "X")
+    y_bounded = bounded_axis(local_y, y_min, -y_min, "Y")
+    bounds = _material_math_node(
+        node_tree, "MULTIPLY", "PrintedCheckerboard_BoundsMask"
+    )
+    bounded_black = _material_math_node(
+        node_tree, "MULTIPLY", "PrintedCheckerboard_BoundedBlackMask"
+    )
+    front_mask = _material_math_node(
+        node_tree,
+        "GREATER_THAN",
+        "PrintedCheckerboard_FrontSurfaceMask",
+        1.0 - 1.0e-6,
+    )
+    printed_black = _material_math_node(
+        node_tree, "MULTIPLY", "PrintedCheckerboard_PrintedBlackMask"
+    )
+    node_tree.links.new(x_bounded, bounds.inputs[0])
+    node_tree.links.new(y_bounded, bounds.inputs[1])
+    node_tree.links.new(black_parity.outputs[0], bounded_black.inputs[0])
+    node_tree.links.new(bounds.outputs[0], bounded_black.inputs[1])
+    node_tree.links.new(separate.outputs["Z"], front_mask.inputs[0])
+    node_tree.links.new(bounded_black.outputs[0], printed_black.inputs[0])
+    node_tree.links.new(front_mask.outputs[0], printed_black.inputs[1])
+
+    color_mix = node_tree.nodes.new("ShaderNodeMixRGB")
+    color_mix.name = "PrintedCheckerboard_Color"
+    color_mix.blend_type = "MIX"
+    color_mix.inputs[1].default_value = (1.0, 1.0, 1.0, 1.0)
+    color_mix.inputs[2].default_value = (0.0, 0.0, 0.0, 1.0)
+    node_tree.links.new(printed_black.outputs[0], color_mix.inputs[0])
+    node_tree.links.new(color_mix.outputs["Color"], bsdf.inputs["Base Color"])
+    node_tree.links.new(bsdf.outputs["BSDF"], output.inputs["Surface"])
+    return mat
+
+
+def add_calibration_circle_grid_board(cfg: SimConfig):
+    definition = getattr(cfg, "CALIBRATION_BOARD_DEFINITION", None)
+    if not isinstance(definition, dict):
+        raise ValueError(
+            "Calibration circle-grid rendering requires an experiment-owned "
+            "--calibration-board-plan"
+        )
+    width = float(definition["width_m"])
+    height = float(definition["height_m"])
+    thickness = float(definition["thickness_m"])
+    dot_radius = float(definition["dot_radius_m"])
+    circle_centers = definition["circle_centers_local_m"]
+    expected_count = int(definition["cols"]) * int(definition["rows"])
+    if len(circle_centers) != expected_count:
+        raise ValueError(
+            "Calibration board plan circle-center count disagrees with rows/cols"
+        )
+    matrix_world = getattr(cfg, "CALIB_BOARD_POSE_MATRIX", None)
+    if matrix_world is None:
+        matrix_world = Matrix.Identity(4)
+    else:
+        matrix_world = Matrix(matrix_world)
+
+    board_mat = _printed_circle_grid_material(
+        width,
+        height,
+        float(definition["spacing_m"]),
+        dot_radius,
+        circle_centers,
+    )
+
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0.0, 0.0, 0.0))
+    root = bpy.context.object
+    root.name = "Calibration_Circle_Grid"
+    root["sim_tag"] = CALIBRATION_BOARD_TAG
+    root["circle_grid_cols"] = int(definition["cols"])
+    root["circle_grid_rows"] = int(definition["rows"])
+    root["dot_spacing_m"] = float(definition["spacing_m"])
+    root["dot_radius_m"] = dot_radius
+    root["circle_grid_surface_model"] = "coplanar_printed_material"
+    root["dot_surface_offset_m"] = 0.0
+    root["calibration_board_plan_sha256"] = str(
+        getattr(cfg, "CALIBRATION_BOARD_PLAN_SHA256", "")
+    )
+
+    bpy.ops.mesh.primitive_cube_add(size=1.0, location=(0.0, 0.0, -thickness * 0.5))
+    board = bpy.context.object
+    board.name = "Calibration_Circle_Grid_Board"
+    board.dimensions = (width, height, thickness)
+    board.data.materials.append(board_mat)
+    board["circle_grid_surface_model"] = "coplanar_printed_material"
+    board["printed_surface_local_z_m"] = 0.0
+    board["dot_surface_offset_m"] = 0.0
+    board.parent = root
+
+    root.matrix_world = matrix_world
+    bpy.context.view_layer.update()
+    return root
+
+
+def add_calibration_checkerboard(cfg: SimConfig):
+    definition = getattr(cfg, "CALIBRATION_BOARD_DEFINITION", None)
+    if not isinstance(definition, dict) or definition.get("type") != "checkerboard":
+        raise ValueError(
+            "Checkerboard rendering requires a checkerboard definition in "
+            "the external --calibration-board-plan"
+        )
+    inner_cols = int(definition["inner_cols"])
+    inner_rows = int(definition["inner_rows"])
+    square_size = float(definition["square_size_m"])
+    margin = float(definition["margin_m"])
+    thickness = float(definition["thickness_m"])
+    width = float(definition["width_m"])
+    height = float(definition["height_m"])
+    matrix_world = getattr(cfg, "CALIB_BOARD_POSE_MATRIX", None)
+
+    board_mat = _printed_checkerboard_material(
+        width, height, inner_cols, inner_rows, square_size
+    )
+
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0.0, 0.0, 0.0))
+    root = bpy.context.object
+    root.name = "Calibration_Checkerboard"
+    root["sim_tag"] = CALIBRATION_CHECKERBOARD_TAG
+    root["checkerboard_inner_cols"] = inner_cols
+    root["checkerboard_inner_rows"] = inner_rows
+    root["checkerboard_square_size_m"] = square_size
+    root["checkerboard_surface_model"] = "coplanar_printed_material"
+    root["square_surface_offset_m"] = 0.0
+    root["calibration_board_plan_sha256"] = str(
+        getattr(cfg, "CALIBRATION_BOARD_PLAN_SHA256", "")
+    )
+
+    bpy.ops.mesh.primitive_cube_add(
+        size=1.0,
+        location=(0.0, 0.0, -thickness * 0.5),
+    )
+    board = bpy.context.object
+    board.name = "Calibration_Checkerboard_Board"
+    board.dimensions = (width, height, thickness)
+    board.data.materials.append(board_mat)
+    board["checkerboard_surface_model"] = "coplanar_printed_material"
+    board["printed_surface_local_z_m"] = 0.0
+    board["square_surface_offset_m"] = 0.0
+    board.parent = root
+
+    if matrix_world is not None:
+        root.matrix_world = Matrix(matrix_world)
+
+    bpy.context.view_layer.update()
+    return root
+
+
+def add_custom_target(
+    filepath,
+    center=(0.0, 0.0, 0.0),
+    rotation_deg=(0.0, 0.0, 0.0),
+    scale=1.0,
+    albedo=0.8,
+    roughness=0.5,
+    metallic=0.0,
+    subsurface=0.0,
+    bake_dir=None,
+    bake_image_size=1024,
+    use_ply_brdf=True,
+):
+    if not os.path.isfile(filepath):
+        print(f"[Scene] Error: Custom target file not found: {filepath}")
+        return None
+    
+    print(f"[Scene] Importing {filepath}...")
+    
+    # Deselect all first to identify the new object easily
+    bpy.ops.object.select_all(action='DESELECT')
+    existing_names = {obj.name for obj in bpy.data.objects}
+    
+    ext = os.path.splitext(filepath)[1].lower()
+    if ext == ".ply":
+        if hasattr(bpy.ops.wm, "ply_import"):
+            bpy.ops.wm.ply_import(filepath=filepath)
+        else:
+            if not hasattr(bpy.ops.import_mesh, "ply"):
+                if hasattr(bpy.ops.preferences, "addon_enable"):
+                    bpy.ops.preferences.addon_enable(module="io_mesh_ply")
+            if hasattr(bpy.ops.import_mesh, "ply"):
+                bpy.ops.import_mesh.ply(filepath=filepath)
+            else:
+                print("[Scene] Error: No PLY importer found.")
+                return None
+    elif ext == ".obj":
+        imported = _import_obj(filepath)
+        if not imported:
+            return None
+        if len(imported) > 1:
+            bpy.ops.object.select_all(action="DESELECT")
+            for o in imported:
+                o.select_set(True)
+            bpy.context.view_layer.objects.active = imported[0]
+            bpy.ops.object.join()
+    else:
+        print(f"[Scene] Warning: Unsupported file extension {ext}")
+        return None
+
+    # Get the imported object
+    new_objects = [obj for obj in bpy.data.objects if obj.name not in existing_names]
+    if new_objects:
+        obj = new_objects[0]
+    else:
+        selected_objects = bpy.context.selected_objects
+        if not selected_objects:
+            print("[Scene] Warning: No object selected after import.")
+            return None
+        obj = selected_objects[0]
+    obj.name = "Target_Custom"
+    obj.location = center
+    obj.rotation_euler = tuple(math.radians(float(value)) for value in rotation_deg)
+    obj.scale = (float(scale),) * 3
+
+    # Setup PBR material
+    if bake_dir and use_ply_brdf:
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        poly_count = len(obj.data.polygons)
+        uv_count = len(obj.data.uv_layers)
+        print(f"[Scene] Mesh polygons: {poly_count}, UV layers: {uv_count}")
+        if poly_count == 0:
+            raise RuntimeError("[Scene] Imported mesh has no faces; cannot bake.")
+        _ensure_uv_map(obj)
+        if not obj.data.uv_layers:
+            raise RuntimeError("[Scene] UV generation failed; no UV layers found.")
+        if obj.data.uv_layers.active is None:
+            raise RuntimeError("[Scene] UV layer not set as active layer.")
+        baked = _bake_vertex_pbr_maps(obj, bake_dir, image_size=bake_image_size)
+        if baked:
+            mat = _build_principled_material(baked)
+            obj.data.materials.clear()
+            obj.data.materials.append(mat)
+            return obj
+
+    if obj.data.materials:
+        mat = obj.data.materials[0]
+    else:
+        mat = bpy.data.materials.new("Custom_PBR_Mat")
+        obj.data.materials.append(mat)
+
+    mat.use_nodes = True
+    nt = mat.node_tree
+    nt.nodes.clear()
+
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+
+    bsdf.inputs["Base Color"].default_value = (albedo, albedo, albedo, 1.0)
+    bsdf.inputs["Roughness"].default_value = roughness
+    bsdf.inputs["Metallic"].default_value = metallic
+
+    if "Subsurface Weight" in bsdf.inputs:
+        bsdf.inputs["Subsurface Weight"].default_value = subsurface
+    elif "Subsurface" in bsdf.inputs:
+        bsdf.inputs["Subsurface"].default_value = subsurface
+
+    nt.links.new(bsdf.outputs["BSDF"], out.inputs["Surface"])
+        
+    return obj
+
+
+def _import_obj(filepath):
+    if not os.path.isfile(filepath):
+        print(f"[Scene] Error: OBJ file not found: {filepath}")
+        return []
+    bpy.ops.object.select_all(action="DESELECT")
+    existing_names = {obj.name for obj in bpy.data.objects}
+
+    if hasattr(bpy.ops.wm, "obj_import"):
+        bpy.ops.wm.obj_import(filepath=filepath)
+    else:
+        if not hasattr(bpy.ops.import_scene, "obj"):
+            if hasattr(bpy.ops.preferences, "addon_enable"):
+                bpy.ops.preferences.addon_enable(module="io_scene_obj")
+        if hasattr(bpy.ops.import_scene, "obj"):
+            bpy.ops.import_scene.obj(filepath=filepath)
+        else:
+            print("[Scene] Error: No OBJ importer found.")
+            return []
+
+    new_objects = [obj for obj in bpy.data.objects if obj.name not in existing_names]
+    if new_objects:
+        return new_objects
+    return list(bpy.context.selected_objects or [])
+
+
+def _load_model_template(model_path, scale, label):
+    model_path = _resolve_repo_path(model_path)
+    if not model_path:
+        print(f"[Scene] {label} model path not set.")
+        return []
+    if os.path.isdir(model_path):
+        obj_files = [f for f in os.listdir(model_path) if f.lower().endswith(".obj")]
+        if not obj_files:
+            print(f"[Scene] Error: No .obj files found in {model_path}")
+            return []
+        model_path = os.path.join(model_path, sorted(obj_files)[0])
+
+    print(f"[Scene] Importing {label} model: {model_path}")
+    objs = _import_obj(model_path)
+    if not objs:
+        return []
+    if scale != 1.0:
+        for obj in objs:
+            obj.scale = (scale,) * 3
+    return objs
+
+
+def _add_model_duplicates(
+    parent_obj,
+    template_objects,
+    rot_deg_tuple,
+    disable_render=False,
+    disable_shadows=False,
+):
+    if not template_objects:
+        return []
+    rot = tuple(math.radians(v) for v in rot_deg_tuple)
+    created = []
+    for src in template_objects:
+        dup = src.copy()
+        if hasattr(src, "data") and src.data is not None:
+            dup.data = src.data
+        dup.name = f"{parent_obj.name}_{src.name}"
+        bpy.context.scene.collection.objects.link(dup)
+        dup.parent = parent_obj
+        dup.location = (0.0, 0.0, 0.0)
+        dup.rotation_euler = rot
+        if disable_render:
+            dup.hide_render = True
+        if disable_shadows and hasattr(dup, "visible_shadow"):
+            dup.visible_shadow = False
+        created.append(dup)
+    return created
+
+
+def build_scene(cfg: SimConfig, bake_dir=None):
+    print("[Scene] Cleaning scene")
+    delete_all_objects()
+
+    if getattr(cfg, "CALIBRATION_CIRCLE_GRID", False) and getattr(
+        cfg, "CALIBRATION_CHECKERBOARD", False
+    ):
+        raise ValueError("CALIBRATION_CIRCLE_GRID and CALIBRATION_CHECKERBOARD are mutually exclusive.")
+
+    target_center = (
+        float(getattr(cfg, "TARGET_CENTER_X", 0.0)),
+        float(getattr(cfg, "TARGET_CENTER_Y", 0.0)),
+        float(getattr(cfg, "TARGET_CENTER_Z", 0.0)),
+    )
+    target_scale = float(getattr(cfg, "TARGET_SCALE", 1.0))
+    if not math.isfinite(target_scale) or target_scale <= 0.0:
+        raise ValueError("TARGET_SCALE must be a finite positive number")
+
+    if getattr(cfg, "CALIBRATION_CIRCLE_GRID", False):
+        print("[Scene] Adding calibration circle grid board")
+        add_calibration_circle_grid_board(cfg)
+    elif getattr(cfg, "CALIBRATION_CHECKERBOARD", False):
+        print("[Scene] Adding calibration checkerboard")
+        add_calibration_checkerboard(cfg)
+    elif cfg.USE_CUSTOM_TARGET and cfg.CUSTOM_TARGET_PATH:
+        print(f"[Scene] Adding custom target: {cfg.CUSTOM_TARGET_PATH}")
+        target_path = _resolve_repo_path(cfg.CUSTOM_TARGET_PATH)
+        target = add_custom_target(
+            target_path, 
+            center=target_center,
+            rotation_deg=(
+                getattr(cfg, "CUSTOM_TARGET_ROT_X_DEG", 0.0),
+                getattr(cfg, "CUSTOM_TARGET_ROT_Y_DEG", 0.0),
+                getattr(cfg, "CUSTOM_TARGET_ROT_Z_DEG", 0.0),
+            ),
+            scale=target_scale,
+            albedo=cfg.MAT_ALBEDO,
+            roughness=cfg.MAT_ROUGHNESS,
+            metallic=cfg.MAT_METALLIC,
+            subsurface=cfg.MAT_SUBSURFACE,
+            bake_dir=bake_dir,
+            use_ply_brdf=cfg.USE_PLY_BRDF,
+        )
+        if target is None:
+            raise RuntimeError(f"[Scene] Failed to import custom target: {target_path}")
+    else:
+        print("[Scene] Adding target")
+        shape = (cfg.TARGET_SHAPE or "box").lower()
+        if shape == "plane":
+            target = add_target_plane(
+                size_xy=(cfg.target_size_x, cfg.target_size_y),
+                center=target_center,
+                color1=(cfg.MAT_ALBEDO, cfg.MAT_ALBEDO, cfg.MAT_ALBEDO, 1.0),
+            )
+        elif shape == "cylinder":
+            target = add_target_cylinder(
+                radius=cfg.target_cyl_radius,
+                depth=cfg.target_cyl_height,
+                center=target_center,
+                axis=cfg.target_cyl_axis,
+            )
+        else:
+            target = add_target_box(
+                size_xyz=(cfg.target_size_x, cfg.target_size_y, cfg.target_size_z),
+                center=target_center,
+            )
+        if target is not None:
+            target.scale = (target_scale,) * 3
+            rotation = Euler(tuple(math.radians(value) for value in (
+                cfg.CUSTOM_TARGET_ROT_X_DEG, cfg.CUSTOM_TARGET_ROT_Y_DEG,
+                cfg.CUSTOM_TARGET_ROT_Z_DEG)), 'XYZ')
+            target.rotation_euler = (rotation.to_matrix() @ target.rotation_euler.to_matrix()).to_euler()
+            for material in target.data.materials:
+                if not material or not material.use_nodes:
+                    continue
+                bsdf = material.node_tree.nodes.get("Principled BSDF")
+                if bsdf:
+                    bsdf.inputs["Base Color"].default_value = (cfg.MAT_ALBEDO,) * 3 + (1.0,)
+                    bsdf.inputs["Roughness"].default_value = cfg.MAT_ROUGHNESS
+                    bsdf.inputs["Metallic"].default_value = cfg.MAT_METALLIC
+                    subsurface = bsdf.inputs.get("Subsurface Weight") or bsdf.inputs.get("Subsurface")
+                    if subsurface is not None:
+                        subsurface.default_value = cfg.MAT_SUBSURFACE
+
+    print("[Scene] Adding cameras")
+    cameras = []
+    camera_model_templates = []
+    projector_model_templates = []
+    if cfg.USE_CAMERA_MODEL and cfg.CAMERA_MODEL_PATH:
+        camera_model_templates = _load_model_template(
+            cfg.CAMERA_MODEL_PATH, cfg.CAMERA_MODEL_SCALE, "camera"
+        )
+    if cfg.USE_PROJECTOR_MODEL and cfg.PROJECTOR_MODEL_PATH:
+        projector_model_templates = _load_model_template(
+            cfg.PROJECTOR_MODEL_PATH, cfg.PROJECTOR_MODEL_SCALE, "projector"
+        )
+
+    projector_origin = projector_world_position(cfg)
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=projector_origin)
+    rig_root = bpy.context.object
+    rig_root.name = "rig_root"
+
+    for spec in camera_specs(cfg):
+        cam = add_camera(
+            cfg,
+            spec["name"],
+            spec["local_position"],
+            parent=rig_root,
+            rotation_matrix=spec["local_rotation"],
+            intrinsic_matrix=spec["intrinsic_matrix_px"],
+        )
+        cameras.append(cam)
+        _add_model_duplicates(
+            cam,
+            camera_model_templates,
+            spec["model_rotation"],
+        )
+
+    print("[Scene] Adding projector (Projectors add-on)")
+    proj = add_projector(cfg)
+    proj.name = projector_name()
+    proj.parent = rig_root
+    proj.matrix_basis = Matrix(projector_local_rotation_matrix(cfg)).to_4x4()
+    bpy.ops.object.empty_add(type="PLAIN_AXES", location=(0.0, 0.0, 0.0))
+    projector_model_root = bpy.context.object
+    projector_model_root.name = f"{proj.name}_model_root"
+    projector_model_root.parent = rig_root
+    projector_model_root.matrix_basis = Matrix(
+        projector_local_rotation_matrix(cfg)
+    ).to_4x4()
+    _add_model_duplicates(
+        projector_model_root,
+        projector_model_templates,
+        (
+            cfg.PROJECTOR_MODEL_ROT_X_DEG,
+            cfg.PROJECTOR_MODEL_ROT_Y_DEG,
+            cfg.PROJECTOR_MODEL_ROT_Z_DEG,
+        ),
+        disable_render=cfg.PROJECTOR_MODEL_DISABLE_RENDER,
+        disable_shadows=cfg.PROJECTOR_MODEL_DISABLE_SHADOWS,
+    )
+
+    for obj in camera_model_templates:
+        bpy.data.objects.remove(obj, do_unlink=True)
+    for obj in projector_model_templates:
+        bpy.data.objects.remove(obj, do_unlink=True)
+
+    get_variant().extend_scene(cfg)
+
+    if getattr(cfg, "USE_OVERVIEW_CAMERA", False):
+        print("[Scene] Adding overview camera")
+        overview_cam = add_overview_camera(cfg)
+        bpy.context.scene.camera = overview_cam
+        if getattr(cfg, "RENDER_OVERVIEW_ONLY", False):
+            return [overview_cam]
+        cameras.append(overview_cam)
+
+    return cameras

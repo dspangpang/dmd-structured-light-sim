@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+*.blend1
+*.blend2
+*.tmp
+*.log
+output/
+build/
+assets/*
+!assets/.gitkeep
+.codex/
+.vscode/

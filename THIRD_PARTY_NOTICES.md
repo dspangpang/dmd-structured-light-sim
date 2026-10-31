@@ -1,0 +1,28 @@
+# Third-party notices
+
+## Projectors
+
+- Author: Jonas Schell.
+- Upstream: https://github.com/Ocupe/Projectors
+- Vendored commit: `405dce83cb7d537e88423c8de80fd5526aac2f51`.
+- License: GPL-3.0-or-later; the complete upstream license is retained at
+  `3rdparty/Projectors/LICENSE`.
+- Local adapter changes are described in `3rdparty/Projectors/UPSTREAM.md`.
+
+The upstream source headers, add-on manifest, license and attribution are
+preserved. No third-party target meshes, camera/projector CAD, capture datasets
+or manuscript figures are bundled in the standalone examples.
+
+## Runtime dependencies
+
+Blender is installed separately; NumPy, Pillow, OpenCV and OpenEXR are installed
+from their respective distributions. They retain their own licenses. Their code
+and binary distributions are not copied into this source repository.
+
+## Project code
+
+Except where a file or third-party directory states otherwise, project code,
+examples and documentation are licensed under GNU GPL version 3 or, at your
+option, any later version (GPL-3.0-or-later).
+
+Copyright © 2026 Jia Zhizhou and contributors.

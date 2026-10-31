@@ -1,0 +1,6 @@
+__pycache__
+docs/
+builds/
+.vscode/
+*.zip
+prototypes/
