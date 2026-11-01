@@ -33,6 +33,10 @@ def inspect_example(output):
         raise RuntimeError("Expected calibration ground truth from scene geometry")
     if calibration["camera_resolution"] != (512, 512) or not calibration["camera_projectors"]:
         raise RuntimeError("Example calibration does not describe its camera/projector pair")
+    mapping = json.loads((output / "inputs/dmd_mapping.json").read_text())
+    for device in calibration["devices"].values():
+        if device["kind"] == "projector" and device["image_size"] != mapping["carrier_texture_size_wh"]:
+            raise RuntimeError("Projector truth resolution does not match its carrier texture")
     frames = manifest["artifacts"]["camera_files"]
     if len(frames) != 4:
         raise RuntimeError(f"Expected four example frames, found {len(frames)}")
@@ -70,6 +74,8 @@ def inspect_example(output):
     if error > 1e-4:
         raise RuntimeError(f"Sphere radius residual exceeds 0.1 mm: {error} m")
     return {"status": "PASS", "frame_count": len(frames), "image_size": [512, 512],
+            "logical_dmd_size_wh": mapping["logical_dmd_size_wh"],
+            "carrier_texture_size_wh": mapping["carrier_texture_size_wh"],
             "image_statistics": statistics, "point_count": len(points), "sphere_radius_error_p99_m": error,
             "cycles_device": manifest.get("actual_cycles_device")}
 
@@ -77,9 +83,18 @@ def inspect_example(output):
 def validate(output, blender):
     output.mkdir(parents=True, exist_ok=True)
     report = {"schema": "dmd-sim.example-validation.v1", "examples": {}}
-    for family in ("orthogonal", "diamond"):
+    cases = {family: ROOT / "examples" / family / "scene.json" for family in ("orthogonal", "diamond")}
+    # Exercise both odd row/column counts with the same optical geometry.
+    odd = json.loads(cases["diamond"].read_text())
+    odd["projector"]["resolution"] = [641, 481]
+    odd["target"]["asset"] = str((cases["diamond"].parent / odd["target"]["asset"]).resolve())
+    for model in odd.get("visualization", {}).values():
+        model["path"] = str((cases["diamond"].parent / model["path"]).resolve())
+    cases["diamond_odd"] = output / "diamond_odd_scene.json"
+    write_json(cases["diamond_odd"], odd)
+    for family, config in cases.items():
         command = [sys.executable, str(ROOT / "scripts/run_simulation.py"), "--config",
-                   str(ROOT / "examples" / family / "scene.json"), "--output", str(output / family)]
+                   str(config), "--output", str(output / family)]
         if blender:
             command += ["--blender-bin", blender]
         with (output / f"{family}.log").open("w") as log:

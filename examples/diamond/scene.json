@@ -21,8 +21,8 @@
   "projector": {
     "type": "diamond",
     "resolution": [
-      912,
-      1140
+      640,
+      480
     ],
     "pixel_pitch_um": 7.56,
     "focal_length_mm": 6.0,

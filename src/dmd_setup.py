@@ -10,9 +10,8 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from dmd_dlp4500 import (
-    LOGICAL_DMD_SIZE, build_carrier_mapping_contract,
-    generate_dlp4500_blender_texture,
+from dmd_diamond import (
+    build_carrier_mapping_contract, generate_diamond_blender_texture,
 )
 
 SCHEMA = "dmd-sim.scene.v1"
@@ -108,9 +107,7 @@ def validate_config(raw):
     kind = projector["type"]
     if kind not in {"orthogonal", "diamond"}:
         raise ValueError("projector.type must be orthogonal or diamond")
-    size = _size(projector["resolution"], "projector.resolution")
-    if kind == "diamond" and size != LOGICAL_DMD_SIZE:
-        raise ValueError("Diamond currently supports the DLP4500 logical resolution [912, 1140]")
+    _size(projector["resolution"], "projector.resolution")
     for device in (raw["camera"], projector):
         _positive(device["pixel_pitch_um"], "pixel_pitch_um")
         _positive(device["focal_length_mm"], "focal_length_mm")
@@ -185,7 +182,7 @@ def prepare(config_path, output):
         raise FileExistsError(f"Output already exists; choose a new directory: {output}")
     kind = raw["projector"]["type"]
     size = tuple(raw["projector"]["resolution"])
-    mapping = build_carrier_mapping_contract() if kind == "diamond" else {
+    mapping = build_carrier_mapping_contract(logical_size=size) if kind == "diamond" else {
         "schema": "dmd-sim.orthogonal_mapping.v1", "logical_dmd_size_wh": list(size),
         "carrier_texture_size_wh": list(size), "projector_roll_deg": 0.0,
         "native_to_carrier_homography": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
@@ -220,7 +217,7 @@ def prepare(config_path, output):
     for index, image in enumerate(images):
         name = f"proj_{index:05d}.bmp"
         image.save(inputs / "logical" / name)
-        texture = generate_dlp4500_blender_texture(image) if kind == "diamond" else image
+        texture = generate_diamond_blender_texture(image) if kind == "diamond" else image
         texture.save(inputs / "projector" / name)
         frames.append({"logical": "logical/" + name, "projector": "projector/" + name,
                        "logical_sha256": sha256(inputs / "logical" / name),

@@ -3,7 +3,7 @@
 **简体中文** | [English](README.en.md)
 
 基于 Blender/Cycles 的单相机、单投影仪结构光仿真，支持**正交 DMD**和
-**Diamond-DMD（DLP4500）**。
+**可配置行列数的 Diamond-DMD**。
 
 ## Blender 界面与四步相移示例
 
@@ -59,7 +59,12 @@ python scripts/run_simulation.py --config examples/orthogonal/scene.json --outpu
 | DMD 类型 | 逻辑输入 | 仿真纹理 |
 |---|---|---|
 | `orthogonal` | 宽、高可配置 | 与输入相同 |
-| `diamond` | DLP4500：912×1140 | 逐像素映射到 1481×1482 载体，并匹配投影仪旋转 |
+| `diamond` | 宽、高可配置，支持奇数行列 | 根据输入尺寸自动生成 45° 错列阵列载体，并匹配投影仪旋转 |
+
+Diamond 示例默认使用 `projector.resolution: [640, 480]`。修改这两个数即可配置
+其他尺寸，宽、高均为至少 2 的整数；例如 `[641, 481]`、`[1280, 800]`，
+也支持 DLP4500 的 `[912, 1140]`。自定义条纹图像必须与配置尺寸一致。
+载体尺寸、坐标映射和导出的投影仪内参会自动更新。
 
 Diamond 的载体尺寸不是硬件上传尺寸，导出的投影仪内参对应载体坐标，坐标换算见
 运行结果中的 `inputs/dmd_mapping.json`。当前模型描述几何投影与纹理成像。
@@ -88,7 +93,7 @@ Diamond 的载体尺寸不是硬件上传尺寸，导出的投影仪内参对应
 `--validate-only` 仅建立场景并校验几何。点云由深度真值生成。
 
 ```bash
-# 单元测试与两种 DMD 的实际渲染检查
+# 单元测试与两种 DMD 的实际渲染检查，包含奇数行列的 Diamond 阵列
 python -m unittest discover -s tests -v
 python scripts/validate_examples.py --output output/validation
 

@@ -3,7 +3,7 @@
 [简体中文](README.md) | **English**
 
 A Blender/Cycles structured-light simulator with one camera and one projector,
-supporting **orthogonal DMD** and **Diamond-DMD (DLP4500)** layouts.
+supporting **orthogonal DMD** and **Diamond-DMD with configurable row and column counts**.
 
 ## Blender UI and four-step phase shifting
 
@@ -66,7 +66,13 @@ lengths in millimetres, pixel pitches in micrometres, and sizes in `[width, heig
 | DMD type | Logical input | Simulation texture |
 |---|---|---|
 | `orthogonal` | Configurable width and height | Same as the input |
-| `diamond` | DLP4500: 912×1140 | Per-pixel mapping to a 1481×1482 carrier with a matching projector rotation |
+| `diamond` | Configurable width and height, including odd counts | Automatically sized carrier for the 45° staggered array with a matching projector rotation |
+
+The Diamond example defaults to `projector.resolution: [640, 480]`. Set these
+two integers to configure another size; each must be at least 2. Examples include
+`[641, 481]`, `[1280, 800]` and the DLP4500 size `[912, 1140]`. Custom fringe images
+must match the configured size. Carrier dimensions, coordinate mappings and
+exported projector intrinsics update automatically.
 
 The Diamond carrier size is not the hardware upload size. Exported projector
 intrinsics refer to carrier coordinates; conversions are recorded in the run's
@@ -102,7 +108,7 @@ prepares inputs; `--validate-only` builds and checks the scene without capturing
 Point clouds are generated from ground-truth depth.
 
 ```bash
-# Unit tests and actual renders for both DMD layouts
+# Unit tests and actual renders for both layouts, including an odd-sized Diamond array
 python -m unittest discover -s tests -v
 python scripts/validate_examples.py --output output/validation
 

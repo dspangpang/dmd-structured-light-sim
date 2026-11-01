@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Build the fixed DLP4500 carrier textures consumed by the Blender simulator.
+"""Map configurable Diamond-DMD arrays to Blender carrier textures.
 
-The public input contract is always one logical DLP4500 frame with 912 columns
-and 1140 rows.  The larger output is a simulator-only carrier raster; it is not
-the Diamond-DMD image size, upload size, or calibration coordinate domain.
-Blender consumes the carrier and applies the matching projector roll, while
-the mapping manifest preserves the 1824x1140 native ``(U, V)`` coordinate
-domain for downstream consumers.
+For W logical columns and H rows, staggered micromirror centres use native
+coordinates U=2*col+(row mod 2), V=row in a 2W by H domain. Blender consumes a
+45-degree carrier raster and applies the matching projector roll. The mapping
+manifest records all sizes and transforms; the carrier is not a hardware upload
+format. DLP4500 dimensions remain a default for direct helper calls.
 """
 
 from __future__ import annotations
@@ -19,14 +18,11 @@ from pathlib import Path
 from PIL import Image
 
 
-DMD_COLS = 912
-DMD_ROWS = 1140
-LOGICAL_DMD_SIZE = (DMD_COLS, DMD_ROWS)
-NATIVE_DMD_SIZE = (2 * DMD_COLS, DMD_ROWS)
+DEFAULT_LOGICAL_SIZE = (912, 1140)
 
-DEFAULT_BATCH_OUTPUT_DIRNAME = "dlp4500_preprojected_textures"
+DEFAULT_BATCH_OUTPUT_DIRNAME = "diamond_preprojected_textures"
 DEFAULT_BATCH_GLOB = "proj_*.bmp"
-DEFAULT_SUFFIX = "_dlp4500_preprojected"
+DEFAULT_SUFFIX = "_diamond_preprojected"
 DEFAULT_MAPPING_FILENAME = "carrier_mapping.json"
 DEFAULT_ORIENTATION = "plus45"
 BACKGROUND_GRAY = 0
@@ -75,23 +71,37 @@ def nonnegative_int(value: int, name: str) -> int:
     return value
 
 
-def logical_to_native(row: int, col: int) -> tuple[int, int]:
+def _logical_size(size) -> tuple[int, int]:
+    if not isinstance(size, (tuple, list)) or len(size) != 2 or any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 1 for value in size
+    ):
+        raise ValueError("logical_size must contain two positive integers (width, height)")
+    return tuple(size)
+
+
+def logical_to_native(
+    row: int, col: int, logical_size=DEFAULT_LOGICAL_SIZE,
+) -> tuple[int, int]:
     """Map one logical DMD pixel to its parity-staggered native coordinate."""
 
-    if not 0 <= row < DMD_ROWS or not 0 <= col < DMD_COLS:
+    cols, rows = _logical_size(logical_size)
+    if not 0 <= row < rows or not 0 <= col < cols:
         raise ValueError(
-            f"logical pixel is outside {DMD_COLS}x{DMD_ROWS}: row={row}, col={col}"
+            f"logical pixel is outside {cols}x{rows}: row={row}, col={col}"
         )
     return 2 * col + (row & 1), row
 
 
-def native_to_logical(native_u: int, native_v: int) -> tuple[int, int]:
+def native_to_logical(
+    native_u: int, native_v: int, logical_size=DEFAULT_LOGICAL_SIZE,
+) -> tuple[int, int]:
     """Invert :func:`logical_to_native` for a valid Diamond micromirror center."""
 
-    if not 0 <= native_u < NATIVE_DMD_SIZE[0] or not 0 <= native_v < NATIVE_DMD_SIZE[1]:
+    cols, rows = _logical_size(logical_size)
+    if not 0 <= native_u < 2 * cols or not 0 <= native_v < rows:
         raise ValueError(
             "native coordinate is outside "
-            f"{NATIVE_DMD_SIZE[0]}x{NATIVE_DMD_SIZE[1]}: "
+            f"{2 * cols}x{rows}: "
             f"U={native_u}, V={native_v}"
         )
     if (native_u - native_v) & 1:
@@ -121,10 +131,11 @@ def map_native_to_texture(
     native_u: int,
     native_v: int,
     orientation: str,
+    logical_size=DEFAULT_LOGICAL_SIZE,
 ) -> tuple[int, int]:
     """Map a native Diamond center to the unshifted carrier lattice."""
 
-    native_to_logical(native_u, native_v)
+    native_to_logical(native_u, native_v, logical_size)
     if orientation == "plus45":
         return (native_u - native_v) // 2, (native_u + native_v) // 2
     if orientation == "minus45":
@@ -138,8 +149,7 @@ def compute_layout(
     orientation: str,
     padding: int,
 ) -> Rot45Layout:
-    if cols <= 0 or rows <= 0:
-        raise ValueError(f"layout dimensions must be positive, got {cols}x{rows}")
+    cols, rows = _logical_size((cols, rows))
     nonnegative_int(padding, "padding")
     projector_roll_deg(orientation)
     samples = []
@@ -210,16 +220,19 @@ def build_carrier_mapping_contract(
     orientation: str = DEFAULT_ORIENTATION,
     padding: int = 0,
     background_gray: int = BACKGROUND_GRAY,
+    *,
+    logical_size=DEFAULT_LOGICAL_SIZE,
 ) -> dict[str, object]:
     """Describe the three coordinate domains without exposing Blender intrinsics."""
 
-    layout = compute_layout(DMD_COLS, DMD_ROWS, orientation, padding)
+    cols, rows = _logical_size(logical_size)
+    layout = compute_layout(cols, rows, orientation, padding)
     clamp_gray(background_gray, "background gray")
     mapping: dict[str, object] = {
         "schema": CARRIER_MAPPING_SCHEMA,
-        "logical_dmd_size_wh": list(LOGICAL_DMD_SIZE),
+        "logical_dmd_size_wh": [cols, rows],
         "carrier_texture_size_wh": list(layout.size),
-        "diamond_native_size_wh": list(NATIVE_DMD_SIZE),
+        "diamond_native_size_wh": [2 * cols, rows],
         "orientation": orientation,
         "projector_roll_deg": projector_roll_deg(orientation),
         "padding_px": padding,
@@ -254,6 +267,8 @@ def write_carrier_mapping_contract(
     orientation: str = DEFAULT_ORIENTATION,
     padding: int = 0,
     background_gray: int = BACKGROUND_GRAY,
+    *,
+    logical_size=DEFAULT_LOGICAL_SIZE,
 ) -> Path:
     """Write a reusable carrier/native transform manifest next to render inputs."""
 
@@ -261,6 +276,7 @@ def write_carrier_mapping_contract(
         orientation,
         padding,
         background_gray,
+        logical_size=logical_size,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(
@@ -275,56 +291,55 @@ def map_logical_to_carrier_pixel(
     col: int,
     orientation: str = DEFAULT_ORIENTATION,
     padding: int = 0,
+    *,
+    logical_size=DEFAULT_LOGICAL_SIZE,
 ) -> tuple[int, int]:
     """Map a logical DMD pixel to its final carrier image pixel."""
 
-    native_u, native_v = logical_to_native(row, col)
-    texture_u, texture_v = map_native_to_texture(native_u, native_v, orientation)
-    layout = compute_layout(DMD_COLS, DMD_ROWS, orientation, padding)
+    cols, rows = _logical_size(logical_size)
+    native_u, native_v = logical_to_native(row, col, logical_size)
+    texture_u, texture_v = map_native_to_texture(native_u, native_v, orientation, logical_size)
+    layout = compute_layout(cols, rows, orientation, padding)
     return (
         texture_u - layout.u_min + layout.padding,
         texture_v - layout.v_min + layout.padding,
     )
 
 
-def load_dmd_input_image(input_path: Path) -> Image.Image:
-    image = Image.open(input_path).convert("L")
-    expected_size = (DMD_COLS, DMD_ROWS)
-    if image.size != expected_size:
+def load_dmd_input_image(input_path: Path, logical_size=None) -> Image.Image:
+    with Image.open(input_path) as source:
+        image = source.convert("L")
+    if logical_size is not None and image.size != _logical_size(logical_size):
         raise ValueError(
-            f"input image must be {DMD_COLS} columns x {DMD_ROWS} rows; "
+            f"input image must have logical size {tuple(logical_size)}; "
             f"got {image.size[0]}x{image.size[1]}: {input_path}"
         )
     return image
 
 
-def generate_dlp4500_blender_texture(
+def generate_diamond_blender_texture(
     source: Image.Image,
     *,
     orientation: str = DEFAULT_ORIENTATION,
     padding: int = 0,
     background_gray: int = BACKGROUND_GRAY,
 ) -> Image.Image:
-    """Generate one Blender carrier texture from a logical 912x1140 image."""
+    """Generate a carrier from the source image's logical width and height."""
 
-    if source.size != LOGICAL_DMD_SIZE:
-        raise ValueError(
-            f"source image must be {DMD_COLS} columns x {DMD_ROWS} rows; "
-            f"got {source.size[0]}x{source.size[1]}"
-        )
+    cols, rows = _logical_size(source.size)
     nonnegative_int(padding, "padding")
     clamp_gray(background_gray, "background gray")
     projector_roll_deg(orientation)
 
     source = source.convert("L")
     pixels = source.load()
-    layout = compute_layout(DMD_COLS, DMD_ROWS, orientation, padding)
+    layout = compute_layout(cols, rows, orientation, padding)
 
     output = Image.new("L", layout.size, background_gray)
     out_pixels = output.load()
 
-    for row in range(DMD_ROWS):
-        for col in range(DMD_COLS):
+    for row in range(rows):
+        for col in range(cols):
             texture_u, texture_v = map_logical_to_texture(row, col, orientation)
             x = texture_u - layout.u_min + layout.padding
             y = texture_v - layout.v_min + layout.padding
@@ -341,7 +356,7 @@ def remap_to_preprojected_texture(
 ) -> Image.Image:
     """Backward-compatible alias for the original Blender-side API."""
 
-    return generate_dlp4500_blender_texture(
+    return generate_diamond_blender_texture(
         source,
         orientation=orientation,
         padding=padding,
