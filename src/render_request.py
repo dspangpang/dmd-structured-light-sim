@@ -13,7 +13,6 @@ RENDER_REQUEST_SCHEMA = "core-sim.render_request.v1"
 _TOP_LEVEL_KEYS = {
     "schema",
     "scene_config",
-    "calibration_board_plan",
     "projector_images",
     "output_dir",
     "render",
@@ -356,7 +355,7 @@ def _apply_visualization(cfg, visualization, request_dir):
 
 def apply_render_request(cfg, loaded, variant):
     if not loaded:
-        return "", ""
+        return ""
     root = loaded["raw"]
     request_dir = loaded["directory"]
     repo_root = loaded["repo_root"]
@@ -385,15 +384,6 @@ def apply_render_request(cfg, loaded, variant):
             repo_root=repo_root,
             preserve_blender_relative=False,
         )
-    calibration_plan = ""
-    if "calibration_board_plan" in root:
-        calibration_plan = _resolve_input_path(
-            root["calibration_board_plan"],
-            request_dir,
-            repo_root=repo_root,
-            preserve_blender_relative=False,
-        )
-        cfg.CALIBRATION_BOARD_PLAN_PATH = calibration_plan
     variant_block = root.get("variant")
     if variant_block is not None:
         variant_block = _mapping(variant_block, "variant")
@@ -414,7 +404,7 @@ def apply_render_request(cfg, loaded, variant):
     cfg.RENDER_REQUEST_SCHEMA = str(root["schema"])
     cfg.RENDER_REQUEST_SHA256 = loaded["sha256"]
     print(f"[RenderRequest] Applied render request: {loaded['path']}")
-    return scene_config, calibration_plan
+    return scene_config
 
 
 def snapshot_render_request(cfg, output_dir):

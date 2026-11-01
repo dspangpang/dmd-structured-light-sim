@@ -6,8 +6,7 @@ class SimulationVariant:
 
     Child branches may select an allowed camera count, add non-structural
     render presets, add branch-only CLI options and extend the Blender scene or
-    capture loop. The authoritative scene and calibration poses always arrive
-    through external contracts handled by core-sim.
+    capture loop. Device geometry comes from the explicit scene configuration.
     """
 
     name = "core-sim"
@@ -83,9 +82,6 @@ class SimulationVariant:
     def expected_main_camera_file_count(self, image_files, cameras, cfg):
         return len(image_files) * len(cameras)
 
-    def expected_checkerboard_camera_file_count(self, pose_count, cameras, cfg):
-        return int(pose_count) * len(cameras)
-
     def render_capture(
         self,
         image_files,
@@ -96,18 +92,6 @@ class SimulationVariant:
     ):
         """Return True when the branch handled the complete capture loop."""
         return False
-
-    def render_calibration_pose(
-        self,
-        projector_objects,
-        cameras,
-        cfg,
-        sequence_dir,
-        pose_dir,
-        pose_index,
-    ):
-        """Optional branch-only captures after the common checkerboard pass."""
-        return []
 
 
 def get_variant():

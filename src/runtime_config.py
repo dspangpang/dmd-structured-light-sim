@@ -133,16 +133,6 @@ class RuntimeConfig:
     SAVE_DEPTH: bool = False
     SAVE_POINTCLOUD: bool = False
 
-    # Calibration circle grid capture
-    CALIBRATION_CIRCLE_GRID: bool = False
-    CALIBRATION_BOARD_PLAN_PATH: str = ""
-    CALIBRATION_BOARD_PLAN_SHA256: str = ""
-    CALIBRATION_BOARD_DEFINITION: dict | None = None
-
-    # Checkerboard calibration data capture
-    CALIBRATION_CHECKERBOARD: bool = False
-    CALIB_WHITE_PROJECTOR_VALUE: int = 255
-
     # Camera model visualization
     USE_CAMERA_MODEL: bool = False
     CAMERA_MODEL_PATH: str = "//assets/models/camera/me2p_v1226.obj"
@@ -164,8 +154,6 @@ class RuntimeConfig:
     APP_SCENE_CONFIG_SCHEMA: str = ""
     APP_SCENE_CONFIG_AUTHORITY: str = ""
     APP_SCENE_CONFIG_SHA256: str = ""
-    APP_BOARD_WIDTH_M: float = 0.0
-    APP_BOARD_HEIGHT_M: float = 0.0
     APP_PROJECTOR_RES_X: int = 0
     APP_PROJECTOR_RES_Y: int = 0
     APP_MASK_THRESHOLD: int = 0

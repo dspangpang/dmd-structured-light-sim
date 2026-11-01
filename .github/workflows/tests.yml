@@ -28,4 +28,6 @@ jobs:
           tar -xf /tmp/blender.tar.xz -C /tmp
           echo "BLENDER_BIN=/tmp/blender-4.5.3-linux-x64/blender" >> "$GITHUB_ENV"
       - run: python scripts/validate_examples.py --output /tmp/dmd-validation
+      - name: Render setup illustration
+        run: '"$BLENDER_BIN" -b --factory-startup --python-exit-code 1 --python blender/render_setup_overview.py -- --render-request /tmp/dmd-validation/orthogonal/inputs/render_request.json --output /tmp/dmd-setup.png'
       - run: '"$BLENDER_BIN" -b --factory-startup -t 2 --python-exit-code 1 --python tests/blender_pixel_coordinates.py'

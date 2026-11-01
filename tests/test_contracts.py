@@ -3,7 +3,6 @@ import json
 import sys
 import tempfile
 import unittest
-import warnings
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -14,7 +13,6 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from app_scene_config import apply_app_scene_config
-from calibration_board_plan import load_calibration_board_plan
 from calc_params import get_camera_parameters
 from render_manifest import RenderRun, completed_render_manifest
 from render_request import (
@@ -183,62 +181,6 @@ class AppSceneContractTests(unittest.TestCase):
             self.apply(root)
 
 
-class CalibrationPlanTests(unittest.TestCase):
-    def test_current_plan_needs_geometry_contracts_but_not_asset_hashes(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            scene_path = root / "moved_scene.json"
-            scene_path.write_text("{}", encoding="utf-8")
-            cfg = SimpleNamespace(
-                APP_SCENE_CONFIG_PATH=str(scene_path),
-                APP_COMMON_VIEW_DEFINITION="test",
-                APP_COMMON_VIEW_AREA_MM2=1.0,
-            )
-            plan = {
-                "schema": "dmd-sim.calibration-board-plan.v1",
-                "scene_contract": {
-                    "schema": "dmd-sim.render-scene.v1",
-                    "path": "/old/machine/scene.json",
-                },
-                "common_view_contract": {
-                    "source": "derived.preview.common_view_region",
-                    "projector_size_px": [800, 600],
-                    "definition": "test",
-                    "area_mm2": 1.0,
-                },
-                "common_view": {"region": {}},
-                "board": {
-                    "type": "checkerboard",
-                    "inner_cols": 2,
-                    "inner_rows": 2,
-                    "square_size_mm": 10.0,
-                    "margin_mm": 1.0,
-                    "thickness_mm": 1.0,
-                    "width_mm": 32.0,
-                    "height_mm": 32.0,
-                },
-                "pose_count": 1,
-                "poses": [
-                    {
-                        "pose_index": 0,
-                        "center_world_mm": [0.0, 0.0, 0.0],
-                        "board_to_world_mm_4x4": [
-                            [1.0, 0.0, 0.0, 0.0],
-                            [0.0, 1.0, 0.0, 0.0],
-                            [0.0, 0.0, 1.0, 0.0],
-                            [0.0, 0.0, 0.0, 1.0],
-                        ],
-                    }
-                ],
-            }
-            plan_path = root / "plan.json"
-            plan_path.write_text(json.dumps(plan), encoding="utf-8")
-            with warnings.catch_warnings(record=True) as caught:
-                loaded = load_calibration_board_plan(plan_path, cfg, (800, 600))
-            self.assertEqual(len(loaded["poses"]), 1)
-            self.assertTrue(any("scene path differs" in str(item.message) for item in caught))
-
-
 class RenderRequestTests(unittest.TestCase):
     def write_request(self, root, payload):
         path = root / "request.json"
@@ -272,9 +214,8 @@ class RenderRequestTests(unittest.TestCase):
             )
             loaded = load_render_request(request, repo_root=REPO_ROOT)
             cfg = RuntimeConfig()
-            scene_path, plan_path = apply_render_request(cfg, loaded, get_variant())
+            scene_path = apply_render_request(cfg, loaded, get_variant())
             self.assertEqual(scene_path, str((root / "scene.json").resolve()))
-            self.assertEqual(plan_path, "")
             self.assertEqual(cfg.PROJECTOR_IMAGE, str((root / "pattern.bmp").resolve()))
             self.assertEqual((cfg.RENDER_RES_X, cfg.RENDER_RES_Y), (320, 240))
             self.assertEqual(cfg.SAMPLES, 8)

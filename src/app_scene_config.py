@@ -319,7 +319,6 @@ def apply_app_scene_config(cfg, path):
     camera = root["camera"]
     projector = root["projector"]
     rig = root["rig"]
-    board = root.get("board", {})
     target_reference = root.get("target_reference", {})
     mask = root.get("mask", {})
     preview = root.get("derived", {}).get("preview", {})
@@ -408,8 +407,6 @@ def apply_app_scene_config(cfg, path):
     cfg.TARGET_CENTER_X = float(origin[0]) * 1.0e-3
     cfg.TARGET_CENTER_Y = float(origin[1]) * 1.0e-3
     cfg.TARGET_CENTER_Z = float(origin[2]) * 1.0e-3
-    cfg.APP_BOARD_WIDTH_M = float(board.get("width_mm", 0.0)) * 1.0e-3
-    cfg.APP_BOARD_HEIGHT_M = float(board.get("height_mm", 0.0)) * 1.0e-3
 
     cfg.CAMERA_INTRINSIC_MATRIX_PX = camera_intrinsic
     cfg.PROJECTOR_INTRINSIC_MATRIX_PX = projector_intrinsic

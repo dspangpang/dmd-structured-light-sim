@@ -22,6 +22,7 @@ class CalibrationExportTests(unittest.TestCase):
             loaded = json.loads((root / "calibration.json").read_text())
             self.assertEqual(result, loaded)
             self.assertEqual(loaded["schema"], SCHEMA)
+            self.assertEqual(loaded["calibration_result_source"], "blender_ground_truth")
             parsed = read_calibration(root / "calibration.json")
             self.assertEqual(set(parsed["devices"]), set(loaded["devices"]))
             self.assertFalse((root / "params.txt").exists())

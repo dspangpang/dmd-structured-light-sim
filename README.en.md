@@ -5,11 +5,16 @@
 A Blender/Cycles structured-light simulator with one camera and one projector,
 supporting **orthogonal DMD** and **Diamond-DMD (DLP4500)** layouts.
 
-## Four-step phase shifting on a sphere
+## Simulation setup and four-step phase shifting
 
-![Four-step phase-shift fringes on a sphere](assets/preview.gif)
+| Simulation setup | Four-step camera images |
+|:---:|:---:|
+| ![Camera, projector and sphere setup](assets/setup.png) | ![Four-step phase-shift fringes on a sphere](assets/preview.gif) |
 
-The animation is rendered by the orthogonal DMD example: a sphere of radius 0.1 m,
+The left illustration uses the example's device poses and models. Gold lines show
+projection and blue lines show camera imaging; supplementary lighting and
+representative rays aid visibility. The animation on the right is rendered by the
+orthogonal DMD example: a sphere of radius 0.1 m,
 with a fringe period of 48 logical pixels and phases of 0°, 90°, 180° and 270°.
 Each frame is 512×512; the GIF preserves the rendered grayscale values.
 Both DMD examples use the same sphere and four-step phase-shift settings.
@@ -67,8 +72,16 @@ their OBJ files. All installation and testing dependencies use one `requirements
 
 `inputs/` stores configuration, fringes and mappings. Render subdirectories contain
 camera images, floating-point EXR, depth, PLY point clouds, `calibration.json` and
-run manifests. Calibration uses OpenCV pixel-centre coordinates and translations
-in metres. `COMPLETE` in `run.json` means rendering finished. `--prepare-only`
+run manifests.
+
+`calibration.json` exports **calibration ground truth** directly from the scene:
+camera and projector intrinsics `K`, extrinsics `world_to_device`, projection
+matrices `P`, and relative device transforms `device_transforms`. It uses OpenCV
+pixel-centre coordinates, translations in metres and zero distortion for the ideal
+model. The repository provides ground-truth export only, with no calibration-board
+generation, calibration-image capture or parameter-estimation workflow.
+
+`COMPLETE` in `run.json` means rendering finished. `--prepare-only`
 prepares inputs; `--validate-only` builds and checks the scene without capturing.
 Point clouds are generated from ground-truth depth.
 
@@ -79,6 +92,9 @@ python scripts/validate_examples.py --output output/validation
 
 # Package four rendered phase frames as a GIF; the output must not exist
 python scripts/make_preview.py --run output/orthogonal --output output/sphere.gif
+
+# Render the setup illustration from the same example; the output must not exist
+"$BLENDER_BIN" -b --factory-startup --python-exit-code 1 --python blender/render_setup_overview.py -- --render-request output/orthogonal/inputs/render_request.json --output output/setup.png
 ```
 
 ## License

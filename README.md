@@ -5,11 +5,15 @@
 基于 Blender/Cycles 的单相机、单投影仪结构光仿真，支持**正交 DMD**和
 **Diamond-DMD（DLP4500）**。
 
-## 球面四步相移示例
+## 仿真环境与四步相移示例
 
-![球面上的四步相移条纹](assets/preview.gif)
+| 整体仿真环境 | 相机四步相移图像 |
+|:---:|:---:|
+| ![相机、投影仪和球体的仿真环境示意图](assets/setup.png) | ![球面上的四步相移条纹](assets/preview.gif) |
 
-上图由正交 DMD 示例实际渲染：半径 0.1 米的球体，条纹周期 48 个逻辑像素，
+左图使用示例的设备位置和模型，金色线表示投射方向，蓝色线表示相机成像方向；
+示意图加入辅助照明和代表性光线，便于观察。右图由正交 DMD 示例实际渲染：
+半径 0.1 米的球体，条纹周期 48 个逻辑像素，
 依次显示 0°、90°、180°、270° 四个相位。每帧为 512×512，动图保持渲染灰度值。
 两种 DMD 示例使用相同的球体和四步相移设置。
 
@@ -59,7 +63,13 @@ Diamond 的载体尺寸不是硬件上传尺寸，导出的投影仪内参对应
 ## 输出与验证
 
 `inputs/` 保存配置、条纹和映射；渲染子目录保存相机图像、浮点 EXR、深度、PLY 点云、
-`calibration.json` 和运行清单。标定采用 OpenCV 像素中心坐标，平移单位为米。
+`calibration.json` 和运行清单。
+
+`calibration.json` 直接从场景导出**标定真值**：相机和投影仪内参 `K`、
+世界到设备的外参 `world_to_device`、投影矩阵 `P` 和设备间相对变换 `device_transforms`。
+采用 OpenCV 像素中心坐标，平移单位为米，理想模型的畸变系数为零。
+仓库只提供真值导出，不包含标定板生成、标定图像采集或参数估计流程。
+
 `run.json` 中的 `COMPLETE` 表示渲染完成；`--prepare-only` 仅准备输入，
 `--validate-only` 仅建立场景并校验几何。点云由深度真值生成。
 
@@ -70,6 +80,9 @@ python scripts/validate_examples.py --output output/validation
 
 # 用已渲染的四张相移图生成动图，输出文件须不存在
 python scripts/make_preview.py --run output/orthogonal --output output/sphere.gif
+
+# 从同一示例生成整体示意图，输出文件须不存在
+"$BLENDER_BIN" -b --factory-startup --python-exit-code 1 --python blender/render_setup_overview.py -- --render-request output/orthogonal/inputs/render_request.json --output output/setup.png
 ```
 
 ## 许可证

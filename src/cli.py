@@ -85,7 +85,7 @@ def parse_blender_args():
     # camera/projector contract.  The per-render target block is applied again
     # below so target translation/rotation/scale override the scene contract's
     # default target reference instead of being silently reset to zero.
-    request_scene_path, _request_plan_path = apply_render_request(
+    request_scene_path = apply_render_request(
         cfg, loaded_request, variant
     )
     scene_config_path = scene_config_from_argv(argv) or request_scene_path
@@ -121,20 +121,12 @@ def parse_blender_args():
                 f"{key} is a structural override; change it in "
                 "the source scene configuration and generate a new --scene-config"
             )
-        if key.startswith("--calib-") and key not in {"--calib-white-projector-value"}:
-            raise ValueError(
-                f"{key} is no longer generated inside Blender; regenerate the "
-                "external --calibration-board-plan instead"
-            )
-
         if key == "--img":
             cfg.PROJECTOR_IMAGE = value
         elif key in {"--render-preset", "--render-request"}:
             pass
         elif key in {"--scene-config", "--structured-light-scene-config"}:
             scene_config_path = value
-        elif key == "--calibration-board-plan":
-            cfg.CALIBRATION_BOARD_PLAN_PATH = value
         elif key == "--out":
             cfg.OUTPUT_DIR = value
         elif key == "--samples":
@@ -196,8 +188,6 @@ def parse_blender_args():
             cfg.SAVE_DEPTH = _parse_bool(value)
         elif key in {"--save-render-float-exr", "--save-float-exr"}:
             cfg.SAVE_RENDER_FLOAT_EXR = _parse_bool(value)
-        elif key == "--calib-white-projector-value":
-            cfg.CALIB_WHITE_PROJECTOR_VALUE = int(value)
         elif variant.parse_cli_option(cfg, key, value, _parse_bool):
             pass
         else:

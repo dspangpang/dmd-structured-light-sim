@@ -22,15 +22,14 @@ if str(SRC_ROOT) not in sys.path:
 from exr_io import read_scalar_float_exr
 
 
-DEFAULT_NAME = "rect_dmd_blender"
-DEFAULT_INPUT = REPO_ROOT / "output" / "calibration_circle_grid" / DEFAULT_NAME
+DEFAULT_NAME = "orthogonal"
+DEFAULT_INPUT = REPO_ROOT / "output" / DEFAULT_NAME / "render"
 DEFAULT_GLOB = "**/*_float.exr"
 DEFAULT_SIGMA_PX = 0.8
 DEFAULT_SIGMA_TAG = f"{DEFAULT_SIGMA_PX:g}".replace("-", "m").replace(".", "p")
 DEFAULT_OUTPUT_ROOT = (
     REPO_ROOT
     / "output"
-    / "calibration_circle_grid"
     / f"{DEFAULT_NAME}_blur_s{DEFAULT_SIGMA_TAG}_bmp"
 )
 DEFAULT_SUFFIX = None
@@ -81,7 +80,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "Input EXR file(s) or directory/directories. Project-relative paths "
             "starting with // are resolved from the repository root. "
-            f"Default: //output/calibration_circle_grid/{DEFAULT_NAME}"
+            f"Default: //output/{DEFAULT_NAME}/render"
         ),
     )
     parser.add_argument(
@@ -110,7 +109,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             "Optional output root. When set, directory structure is mirrored "
-            "under this root. Default: //output/calibration_circle_grid/"
+            "under this root. Default: //output/"
             "<input-name>_blur_s<sigma>_<image-format>."
         ),
     )
@@ -247,7 +246,6 @@ def default_output_root_for(
     return (
         REPO_ROOT
         / "output"
-        / "calibration_circle_grid"
         / f"{DEFAULT_NAME}_{processing_tag}_{image_format}"
     )
 

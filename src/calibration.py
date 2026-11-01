@@ -1,4 +1,4 @@
-"""OpenCV calibration export. No Blender runtime or text parsing is required."""
+"""Export exact scene geometry as OpenCV calibration ground truth; no calibration solver."""
 import json
 from pathlib import Path
 import numpy as np

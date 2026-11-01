@@ -29,6 +29,8 @@ def inspect_example(output):
         raise RuntimeError(reason)
     manifest = json.loads(manifest_path.read_text())
     calibration = read_calibration(manifest_path.parent / "calibration.json")
+    if calibration["raw"].get("calibration_result_source") != "blender_ground_truth":
+        raise RuntimeError("Expected calibration ground truth from scene geometry")
     if calibration["camera_resolution"] != (512, 512) or not calibration["camera_projectors"]:
         raise RuntimeError("Example calibration does not describe its camera/projector pair")
     frames = manifest["artifacts"]["camera_files"]

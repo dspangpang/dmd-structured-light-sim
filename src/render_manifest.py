@@ -62,7 +62,6 @@ def _render_config_snapshot(cfg):
         "METADATA_ONLY",
         "APP_SCENE_CONFIG_PATH",
         "APP_SCENE_CONFIG_AUTHORITY",
-        "CALIBRATION_BOARD_PLAN_PATH",
         "RENDER_REQUEST_PATH",
         "RENDER_REQUEST_SCHEMA",
         "RENDER_REQUEST_SHA256",
@@ -121,7 +120,6 @@ class RenderRun:
         run_type,
         projector_images=(),
         target_path=None,
-        calibration_plan=None,
         blender_version="",
         extra_request=None,
     ):
@@ -167,7 +165,6 @@ class RenderRun:
             "projector_images": [_file_record(path) for path in projector_images],
             "target": _file_record(target_path) if target_path else None,
             "auxiliary_inputs": auxiliary_inputs,
-            "calibration_plan": calibration_plan,
             "render_config": _render_config_snapshot(cfg),
             "render_options": {
                 "preset": str(cfg.RENDER_PRESET),
