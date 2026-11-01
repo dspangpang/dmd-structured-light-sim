@@ -97,7 +97,7 @@ def _device(device, size, role, roll_deg=0.0):
 
 
 def validate_config(raw):
-    _keys(raw, {"schema", "camera", "projector", "patterns", "target", "render", "capture"}, "scene")
+    _keys(raw, {"schema", "camera", "projector", "patterns", "target", "render", "capture", "visualization"}, "scene")
     if raw.get("schema") != SCHEMA:
         raise ValueError(f"Expected schema {SCHEMA}")
     pose_keys = {"position_m", "look_at_m", "up", "pixel_pitch_um", "focal_length_mm"}
@@ -141,7 +141,8 @@ def validate_config(raw):
     apply_render_request(RuntimeConfig(), {"directory": str(Path.cwd()), "repo_root": str(Path.cwd()),
         "path": "standalone-config-validation", "sha256": "",
         "raw": {"schema": RENDER_REQUEST_SCHEMA, "target": raw["target"],
-                "render": raw.get("render", {}), "capture": raw.get("capture", {})}}, VARIANT)
+                "render": raw.get("render", {}), "capture": raw.get("capture", {}),
+                "visualization": raw.get("visualization", {})}}, VARIANT)
     if "resolution" in raw.get("render", {}):
         raise ValueError("Set image dimensions in camera.resolution, not render.resolution")
     return raw
@@ -225,18 +226,34 @@ def prepare(config_path, output):
                        "logical_sha256": sha256(inputs / "logical" / name),
                        "projector_sha256": sha256(inputs / "projector" / name)})
     target = copy.deepcopy(raw["target"])
+    assets = {}
     if "asset" in target:
         asset = (config_path.parent / target["asset"]).resolve()
         if not asset.is_file():
             raise FileNotFoundError(f"Target asset does not exist: {asset}")
         target["asset"] = str(asset)
+        assets["target"] = {"sha256": sha256(asset)}
+    visualization = copy.deepcopy(raw.get("visualization", {}))
+    for key in ("camera_model", "projector_model"):
+        model = visualization.get(key)
+        if not model:
+            continue
+        if model.get("enabled", False) and not model.get("path"):
+            raise ValueError(f"visualization.{key}.path is required when enabled")
+        if "path" in model:
+            asset = (config_path.parent / model["path"]).resolve()
+            if not asset.is_file():
+                raise FileNotFoundError(f"Model asset does not exist: {asset}")
+            model["path"] = str(asset)
+            assets[key] = {"sha256": sha256(asset)}
     request = {"schema": "core-sim.render_request.v1", "scene_config": "scene.json",
         "projector_images": "projector", "output_dir": str(output / "render"), "target": target,
         "render": raw.get("render", {}), "capture": raw.get("capture", {}),
+        "visualization": visualization,
         "variant": {"name": "dmd-structured-light-sim", "settings": {}}}
     write_json(inputs / "render_request.json", request)
     write_json(inputs / "preparation_manifest.json", {"schema": "dmd-sim.preparation.v1",
         "dmd_type": kind, "config_sha256": sha256(config_path), "source_images": sources,
-        "frames": frames, "dmd_mapping_sha256": sha256(inputs / "dmd_mapping.json"),
+        "frames": frames, "assets": assets, "dmd_mapping_sha256": sha256(inputs / "dmd_mapping.json"),
         "scene_sha256": sha256(inputs / "scene.json")})
     return inputs / "render_request.json"

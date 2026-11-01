@@ -13,6 +13,8 @@ from scene import build_scene
 from render import setup_render, validate_blender_camera_intrinsics
 
 cfg = parse_blender_args()
+cfg.USE_CUSTOM_TARGET = False
+cfg.TARGET_SHAPE = "plane"
 cfg.PROJECTOR_IMAGE = str(sorted(Path(cfg.PROJECTOR_IMAGE).glob("proj_*.bmp"))[0])
 cfg.MAT_ALBEDO = 0.27
 cfg.MAT_ROUGHNESS = 0.43
@@ -21,6 +23,9 @@ cfg.MAT_SUBSURFACE = 0.12
 cfg.CUSTOM_TARGET_ROT_Z_DEG = 20.0
 cfg.TARGET_SCALE = 0.8
 cameras = build_scene(cfg)
+assert any(obj.type == "MESH" and obj.parent == cameras[0] for obj in bpy.data.objects), "Camera model missing"
+assert any(obj.type == "MESH" and obj.parent and obj.parent.name == "Projector_model_root"
+           for obj in bpy.data.objects), "Projector model missing"
 setup_render(cfg)
 validate_blender_camera_intrinsics(cameras, cfg)
 target = bpy.data.objects["Target_Plane"]

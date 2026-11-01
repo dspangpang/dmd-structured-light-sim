@@ -2,14 +2,20 @@
 
 **简体中文** | [English](README.en.md)
 
-基于 Blender/Cycles 的单相机、单投影仪结构光仿真工具，支持**正交 DMD**和
-**Diamond-DMD（DLP4500）**。通过 JSON 配置设备、图案、目标和材质，输出相机图像、
-浮点图像、深度、点云及标定参数。
+基于 Blender/Cycles 的单相机、单投影仪结构光仿真，支持**正交 DMD**和
+**Diamond-DMD（DLP4500）**。
+
+## 球面四步相移示例
+
+![球面上的四步相移条纹](assets/preview.gif)
+
+上图由正交 DMD 示例实际渲染：半径 0.1 米的球体，条纹周期 48 个逻辑像素，
+依次显示 0°、90°、180°、270° 四个相位。每帧为 512×512，动图保持渲染灰度值。
+两种 DMD 示例使用相同的球体和四步相移设置。
 
 ## 安装与运行
 
-已验证环境：Linux、Python 3.10、Blender 4.5.3。先单独安装 Blender，
-再安装本仓库唯一的 Python 依赖文件：
+已验证环境：Linux、Python 3.10、Blender 4.5.3。先安装 Blender，再执行：
 
 ```bash
 git clone https://github.com/dspangpang/dmd-structured-light-sim.git
@@ -26,75 +32,48 @@ python scripts/run_simulation.py --config examples/orthogonal/scene.json --outpu
 python scripts/run_simulation.py --config examples/diamond/scene.json --output output/diamond
 ```
 
-两个示例自动生成平面目标和四步相移正弦图案，采用 CPU 渲染，输出 320×240 相机图像。
-每次运行请指定一个新输出目录；已有目录不会被覆盖。
+示例直接加载仓库自带模型并生成条纹，默认使用 CPU。每次运行请指定新输出目录。
 
-| 正交 DMD 示例 | Diamond-DMD 示例 |
-|---|---|
-| ![正交 DMD 渲染](docs/images/orthogonal.png) | ![Diamond-DMD 渲染](docs/images/diamond.png) |
+## 配置与模型
 
-## 两种 DMD
+复制一个示例的 `scene.json` 即可修改设备位置、朝向、焦距、分辨率、图案、目标和材质。
+`patterns.period_px` 控制周期，`phase_steps` 控制相移步数；自定义灰度图按 `patterns.files`
+的显式列表顺序输入。位置单位为米，焦距为毫米，像元尺寸为微米，分辨率为 `[宽, 高]`。
 
-| 类型 | 配置中的逻辑分辨率 | 仿真投影纹理 |
+| DMD 类型 | 逻辑输入 | 仿真纹理 |
 |---|---|---|
-| `orthogonal` | 宽、高均可配置 | 与逻辑图像相同 |
+| `orthogonal` | 宽、高可配置 | 与输入相同 |
 | `diamond` | DLP4500：912×1140 | 逐像素映射到 1481×1482 载体，并匹配投影仪旋转 |
 
-Diamond 的载体尺寸用于仿真纹理，不是设备上传尺寸。坐标映射保存在
-`inputs/dmd_mapping.json`；导出的投影仪内参对应载体坐标。
-当前采用几何投影与纹理成像模型，不包含微镜时序、衍射或实测光学 PSF。
+Diamond 的载体尺寸不是硬件上传尺寸，导出的投影仪内参对应载体坐标，坐标换算见
+运行结果中的 `inputs/dmd_mapping.json`。当前模型描述几何投影与纹理成像。
 
-## 修改配置
+`assets/models/` 提供三个以米为单位的 OBJ 模型：
 
-复制一个示例的 `scene.json`，按需修改：
+- `camera.obj`、`projector.obj`：轻量设备外壳示意，由 `visualization` 配置加载；光学参数由配置决定。
+- `sphere.obj`：半径 0.1 米、中心在原点的球体，由 `target.asset` 加载。
 
-- `camera`、`projector`：位置、朝向、分辨率、焦距、像元尺寸。
-- `patterns`：自动生成正弦图案，或提供按采集顺序排列的灰度图文件列表。
-- `target`：平面、方盒、圆柱或自定义模型，以及目标材质。
-- `render`、`capture`：采样数、CPU/GPU、投影亮度及输出类型。
+模型是本项目生成的原创示例，可通过 Blender 执行 `scripts/generate_assets.py` 重新生成。
+材质文件与对应 OBJ 放在同一目录。所有安装与测试依赖都在唯一的 `requirements.txt` 中。
 
-尺寸使用 `[宽, 高]`；位置单位为米，焦距为毫米，像元尺寸为微米。
-在运行命令后增加 `--prepare-only` 可只生成输入；增加 `--validate-only` 可在
-Blender 中建立场景并检查几何，不执行采集。完整字段见[配置说明](docs/configuration.md)。
+## 输出与验证
 
-## 输出与目录
-
-运行结果保存在指定的输出目录中：
-
-- `inputs/`：配置副本、图案、坐标映射和渲染请求。
-- 渲染子目录：相机图像、可选的浮点 EXR、深度、世界坐标 PLY 点云，
-  以及 `calibration.json`、`params.txt` 和 `render_manifest.json`。
-- `run.json`：运行状态；`COMPLETE` 表示完成渲染，`VALIDATED` 表示完成场景校验。
-
-仓库的主要目录如下：
-
-```text
-examples/     两种 DMD 的独立配置
-scripts/      运行、验证和后处理入口
-src/          配置、坐标、投影和渲染实现
-blender/      Blender 场景执行入口
-tests/        自动测试
-docs/         配置、坐标与验证说明
-3rdparty/     投影仪插件
-```
-
-## 验证
-
-安装 `requirements.txt` 后即可运行以下检查：
+`inputs/` 保存配置、条纹和映射；渲染子目录保存相机图像、浮点 EXR、深度、PLY 点云、
+`calibration.json` 和运行清单。标定采用 OpenCV 像素中心坐标，平移单位为米。
+`run.json` 中的 `COMPLETE` 表示渲染完成；`--prepare-only` 仅准备输入，
+`--validate-only` 仅建立场景并校验几何。点云由深度真值生成。
 
 ```bash
+# 单元测试与两种 DMD 的实际渲染检查
 python -m unittest discover -s tests -v
 python scripts/validate_examples.py --output output/validation
-"$BLENDER_BIN" -b --factory-startup -t 2 --python-exit-code 1 --python tests/blender_pixel_coordinates.py
-```
 
-示例检查包括相移图像、辅助输出、标定文件、完成清单和点云几何。
-点云由深度真值生成；这些检查用于确认功能和坐标一致性。
-详见[验证记录](docs/validation.md)、[DMD 坐标](docs/dmd_coordinates.md)、
-[像素与标定坐标](docs/pixel_coordinates.md)和[标定板及后处理接口](docs/advanced.md)。
+# 用已渲染的四张相移图生成动图，输出文件须不存在
+python scripts/make_preview.py --run output/orthogonal --output output/sphere.gif
+```
 
 ## 许可证
 
-项目代码采用 **GPL-3.0-or-later**。Copyright © 2026 Jia Zhizhou and contributors。
-第三方代码保留原作者及许可证声明，详见 [LICENSE](LICENSE) 和
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+项目代码和自带示例模型采用 **GPL-3.0-or-later**。
+Copyright © 2026 Jia Zhizhou and contributors。
+第三方声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)，完整许可证见 [LICENSE](LICENSE)。

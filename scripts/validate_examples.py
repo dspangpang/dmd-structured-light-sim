@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the bundled plane examples and check images, provenance and 3-D output."""
+"""Render the bundled sphere examples and check images, calibration and 3-D output."""
 from __future__ import annotations
 import argparse
 import json
@@ -29,7 +29,7 @@ def inspect_example(output):
         raise RuntimeError(reason)
     manifest = json.loads(manifest_path.read_text())
     calibration = read_calibration(manifest_path.parent / "calibration.json")
-    if calibration["camera_resolution"] != (320, 240) or not calibration["camera_projectors"]:
+    if calibration["camera_resolution"] != (512, 512) or not calibration["camera_projectors"]:
         raise RuntimeError("Example calibration does not describe its camera/projector pair")
     frames = manifest["artifacts"]["camera_files"]
     if len(frames) != 4:
@@ -39,7 +39,7 @@ def inspect_example(output):
         path = manifest_path.parent / frame["path"]
         with Image.open(path) as image:
             array = np.asarray(image.convert("L"))
-            if image.size != (320, 240):
+            if image.size != (512, 512):
                 raise RuntimeError(f"Wrong image dimensions: {image.size}")
         if array.std() < 5 or (array == 255).mean() > 0.01:
             raise RuntimeError(f"Blank or saturated example: {path}")
@@ -62,12 +62,13 @@ def inspect_example(output):
                 break
         points = np.frombuffer(stream.read(), dtype="<f4").reshape(-1, 3)
     if len(points) < 1000 or not np.isfinite(points).all():
-        raise RuntimeError("Incomplete plane point cloud")
-    error = float(np.quantile(np.abs(points[:, 2]), 0.99))
-    if error > 1e-5:
-        raise RuntimeError(f"Plane ground-truth z error exceeds 10 micrometres: {error} m")
-    return {"status": "PASS", "frame_count": len(frames), "image_size": [320, 240],
-            "image_statistics": statistics, "point_count": len(points), "plane_abs_z_p99_m": error,
+        raise RuntimeError("Incomplete sphere point cloud")
+    error = float(np.quantile(np.abs(np.linalg.norm(points, axis=1) - .1), 0.99))
+    # The bundled mesh approximates an analytic sphere with planar triangles.
+    if error > 1e-4:
+        raise RuntimeError(f"Sphere radius residual exceeds 0.1 mm: {error} m")
+    return {"status": "PASS", "frame_count": len(frames), "image_size": [512, 512],
+            "image_statistics": statistics, "point_count": len(points), "sphere_radius_error_p99_m": error,
             "cycles_device": manifest.get("actual_cycles_device")}
 
 

@@ -22,7 +22,12 @@ from runtime_config import RuntimeConfig
 
 class StandaloneTests(unittest.TestCase):
     def config(self, kind="orthogonal"):
-        return json.loads((ROOT / "examples" / kind / "scene.json").read_text())
+        config_path = ROOT / "examples" / kind / "scene.json"
+        cfg = json.loads(config_path.read_text())
+        cfg["target"]["asset"] = str((config_path.parent / cfg["target"]["asset"]).resolve())
+        for model in cfg["visualization"].values():
+            model["path"] = str((config_path.parent / model["path"]).resolve())
+        return cfg
 
     def test_all_python_entries_parse(self):
         # Includes Blender-only entries omitted by unittest discovery.
@@ -96,9 +101,10 @@ class StandaloneTests(unittest.TestCase):
         p0 = h @ [500, 500, 1]
         p1 = h @ [502, 500, 1]
         direction = basis @ np.linalg.inv(k) @ (p1 - p0)
-        self.assertGreater(direction[0], 0)
-        self.assertAlmostEqual(direction[1], 0, places=12)
-        self.assertAlmostEqual(direction[2], 0, places=12)
+        forward = np.array(cfg["projector"]["look_at_m"]) - cfg["projector"]["position_m"]
+        expected = np.cross(forward, cfg["projector"].get("up", [0, 1, 0]))
+        np.testing.assert_allclose(direction / np.linalg.norm(direction),
+                                   expected / np.linalg.norm(expected), atol=1e-12)
 
     def test_requested_auxiliary_outputs_are_required(self):
         from types import SimpleNamespace
@@ -138,8 +144,23 @@ class StandaloneTests(unittest.TestCase):
             for kind in ("orthogonal", "diamond"):
                 request = prepare(ROOT / "examples" / kind / "scene.json", Path(tmp) / kind)
                 prepared = json.loads(request.read_text())
-                self.assertNotIn("asset", prepared["target"])
+                self.assertTrue(Path(prepared["target"]["asset"]).is_file())
+                for model in prepared["visualization"].values():
+                    self.assertTrue(Path(model["path"]).is_file())
                 self.assertEqual(len(list((request.parent / "projector").glob("*.bmp"))), 4)
+
+    def test_visualization_rejects_typos_and_missing_model(self):
+        cfg = self.config()
+        cfg["visualization"]["camera_model"]["enabeld"] = True
+        with self.assertRaisesRegex(ValueError, "enabeld"):
+            validate_config(cfg)
+        with tempfile.TemporaryDirectory() as tmp:
+            cfg = self.config()
+            cfg["visualization"]["camera_model"]["path"] = "missing.obj"
+            source = Path(tmp) / "scene.json"
+            source.write_text(json.dumps(cfg))
+            with self.assertRaisesRegex(FileNotFoundError, "Model asset"):
+                prepare(source, Path(tmp) / "out")
 
 
 if __name__ == "__main__":

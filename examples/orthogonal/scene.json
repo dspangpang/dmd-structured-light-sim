@@ -2,15 +2,15 @@
   "schema": "dmd-sim.scene.v1",
   "camera": {
     "resolution": [
-      320,
-      240
+      512,
+      512
     ],
     "pixel_pitch_um": 10.0,
-    "focal_length_mm": 4.0,
+    "focal_length_mm": 10.0,
     "position_m": [
-      0.04,
+      0.16,
       0,
-      0.5
+      0.65
     ],
     "look_at_m": [
       0,
@@ -27,9 +27,9 @@
     "pixel_pitch_um": 7.56,
     "focal_length_mm": 6.0,
     "position_m": [
+      -0.12,
       0,
-      0,
-      0.5
+      0.65
     ],
     "look_at_m": [
       0,
@@ -39,19 +39,12 @@
   },
   "patterns": {
     "kind": "sinusoidal",
-    "period_px": 64.0,
+    "period_px": 48.0,
     "phase_steps": 4,
     "axis": "x"
   },
   "target": {
-    "primitive": {
-      "shape": "plane",
-      "size_m": [
-        0.5,
-        0.38,
-        0.001
-      ]
-    },
+    "asset": "../../assets/models/sphere.obj",
     "center_world_m": [
       0,
       0,
@@ -65,11 +58,11 @@
     }
   },
   "render": {
-    "samples": 8,
+    "samples": 32,
     "use_gpu": false,
     "threads": 2,
     "denoising": false,
-    "projector_energy": 3.0,
+    "projector_energy": 4.0,
     "projector_texture_interpolation": "Closest",
     "bounce_level": "off",
     "save_float_exr": true
@@ -78,5 +71,25 @@
     "projector_image_format": "PNG",
     "save_depth": true,
     "save_pointcloud": true
+  },
+  "visualization": {
+    "camera_model": {
+      "enabled": true,
+      "path": "../../assets/models/camera.obj",
+      "rotation_deg": [
+        0,
+        0,
+        0
+      ]
+    },
+    "projector_model": {
+      "enabled": true,
+      "path": "../../assets/models/projector.obj",
+      "rotation_deg": [
+        0,
+        0,
+        0
+      ]
+    }
   }
 }
