@@ -33,11 +33,21 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--prepare-only", action="store_true", help="Generate inputs without starting Blender")
     mode.add_argument("--validate-only", action="store_true", help="Build and validate the actual scene without rendering")
+    mode.add_argument("--interactive", action="store_true", help="Open Blender with an editable four-step scene and save scene.blend")
     args = parser.parse_args(argv)
     blender = None if args.prepare_only else resolve_blender(args.blender_bin)
     request = prepare(args.config, args.output)
     print(f"Prepared inputs: {request.parent}", flush=True)
     if args.prepare_only:
+        return 0
+    if args.interactive:
+        scene_file = args.output.resolve() / "scene.blend"
+        subprocess.run([blender, "--factory-startup", "--python-exit-code", "1",
+                        "--python", str(ROOT / "blender/open_scene.py"), "--",
+                        "--render-request", str(request), "--save", str(scene_file)], cwd=ROOT, check=True)
+        if not scene_file.is_file():
+            raise RuntimeError("Interactive scene was not saved")
+        print(f"Saved editable scene: {scene_file}", flush=True)
         return 0
     command = [blender, "--background", "--factory-startup", "--python-exit-code", "1",
                "--python", str(ROOT / "blender/stereo_with_projector_parented.py"),

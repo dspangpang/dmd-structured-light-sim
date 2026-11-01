@@ -10,8 +10,16 @@
 - Local adapter changes are described in `3rdparty/Projectors/UPSTREAM.md`.
 
 The upstream source headers, add-on manifest, license and attribution are
-preserved. No third-party target meshes, camera/projector CAD, capture datasets
-or manuscript figures are bundled in the standalone examples.
+preserved. No third-party CAD source files, capture datasets or manuscript figures
+are bundled in the standalone examples.
+
+## Blender UI recording
+
+`assets/blender-ui.gif` records a running Blender window using locally supplied
+manufacturer CAD models: `me2p_v1226` (camera) and `LightCrafter4500` (projector).
+The CAD files are not included in this repository or covered by its project-code
+license. The public examples use the original procedural models described below;
+users can configure their own local device models through `visualization`.
 
 ## Bundled example models
 

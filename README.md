@@ -5,17 +5,18 @@
 基于 Blender/Cycles 的单相机、单投影仪结构光仿真，支持**正交 DMD**和
 **Diamond-DMD（DLP4500）**。
 
-## 仿真环境与四步相移示例
+## Blender 界面与四步相移示例
 
-| 整体仿真环境 | 相机四步相移图像 |
-|:---:|:---:|
-| ![相机、投影仪和球体的仿真环境示意图](assets/setup.png) | ![球面上的四步相移条纹](assets/preview.gif) |
+![Blender 窗口中的设备布置、球面条纹和四步相移时间轴](assets/blender-ui.gif)
 
-左图使用示例的设备位置和模型，金色线表示投射方向，蓝色线表示相机成像方向；
-示意图加入辅助照明和代表性光线，便于观察。右图由正交 DMD 示例实际渲染：
-半径 0.1 米的球体，条纹周期 48 个逻辑像素，
-依次显示 0°、90°、180°、270° 四个相位。每帧为 512×512，动图保持渲染灰度值。
-两种 DMD 示例使用相同的球体和四步相移设置。
+上图直接截取运行中的 Blender 窗口：左侧为相机、投影仪和球体的整体场景，
+右侧为相机视图，时间轴第 1–4 帧对应 0°、90°、180°、270° 相位。
+界面演示加载本地厂商 CAD（me2p_v1226 相机、LightCrafter4500 投影仪）；
+这些 CAD 源文件不随仓库分发，默认示例使用自带的轻量外壳模型。
+
+球体半径为 0.1 米，条纹周期为 48 个逻辑像素。两种 DMD 示例使用相同的球体
+和四步相移设置。[相机输出动图](assets/preview.gif)保留四张 512×512 渲染图的灰度值；
+Blender 视口使用 Standard 显示变换，供交互观察。
 
 ## 安装与运行
 
@@ -38,6 +39,17 @@ python scripts/run_simulation.py --config examples/diamond/scene.json --output o
 
 示例直接加载仓库自带模型并生成条纹，默认使用 CPU。每次运行请指定新输出目录。
 
+打开可交互场景：
+
+```bash
+python scripts/run_simulation.py --config examples/orthogonal/scene.json --output output/interactive --interactive
+```
+
+在 Blender 时间轴切换第 1–4 帧即可观察相移，也可按空格播放。
+中键拖动左侧视图可旋转观察设备，右侧保持相机视角。
+场景会保存为 `output/interactive/scene.blend`，四张条纹已内嵌，可直接重新打开。
+将配置换成 `examples/diamond/scene.json` 即可查看 Diamond-DMD。
+
 ## 配置与模型
 
 复制一个示例的 `scene.json` 即可修改设备位置、朝向、焦距、分辨率、图案、目标和材质。
@@ -59,6 +71,8 @@ Diamond 的载体尺寸不是硬件上传尺寸，导出的投影仪内参对应
 
 模型是本项目生成的原创示例，可通过 Blender 执行 `scripts/generate_assets.py` 重新生成。
 材质文件与对应 OBJ 放在同一目录。所有安装与测试依赖都在唯一的 `requirements.txt` 中。
+使用自己的设备 CAD 时，将 `visualization.camera_model.path` 和
+`visualization.projector_model.path` 指向本地 OBJ，并设置各自的 `rotation_deg`。
 
 ## 输出与验证
 
@@ -81,8 +95,8 @@ python scripts/validate_examples.py --output output/validation
 # 用已渲染的四张相移图生成动图，输出文件须不存在
 python scripts/make_preview.py --run output/orthogonal --output output/sphere.gif
 
-# 从同一示例生成整体示意图，输出文件须不存在
-"$BLENDER_BIN" -b --factory-startup --python-exit-code 1 --python blender/render_setup_overview.py -- --render-request output/orthogonal/inputs/render_request.json --output output/setup.png
+# 无窗口生成可打开的 Blender 场景，输出文件须不存在
+"$BLENDER_BIN" -b --factory-startup --python-exit-code 1 --python blender/open_scene.py -- --render-request output/orthogonal/inputs/render_request.json --save output/scene.blend
 ```
 
 ## 许可证
