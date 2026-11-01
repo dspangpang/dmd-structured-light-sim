@@ -1,5 +1,7 @@
 # DMD 结构光仿真环境
 
+**简体中文** | [English](README.en.md)
+
 基于 Blender/Cycles 的单相机、单投影仪结构光仿真工具，支持**正交 DMD**和
 **Diamond-DMD（DLP4500）**。通过 JSON 配置设备、图案、目标和材质，输出相机图像、
 浮点图像、深度、点云及标定参数。
@@ -15,7 +17,7 @@ cd dmd-structured-light-sim
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-export BLENDER_BIN=/你的/Blender/可执行文件
+export BLENDER_BIN=/path/to/blender
 
 # 正交 DMD
 python scripts/run_simulation.py --config examples/orthogonal/scene.json --output output/orthogonal
