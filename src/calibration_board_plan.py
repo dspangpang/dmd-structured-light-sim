@@ -10,10 +10,10 @@ from pathlib import Path
 
 
 PLAN_SCHEMAS = {
-    "gwcam_calibration_circle_grid_plan",
-    "gwcam_calibration_board_plan",
+    "dmd-sim.circle-grid-plan.v1",
+    "dmd-sim.calibration-board-plan.v1",
 }
-APP_SCENE_SCHEMA = "gwcam_structured_light_scene"
+APP_SCENE_SCHEMA = "dmd-sim.render-scene.v1"
 
 
 def _sha256(path):

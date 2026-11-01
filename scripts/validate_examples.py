@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from dmd_setup import write_json
 from render_manifest import completed_render_manifest
+from calibration_io import read_calibration
 from run_simulation import resolve_blender
 
 
@@ -27,6 +28,9 @@ def inspect_example(output):
     if not complete:
         raise RuntimeError(reason)
     manifest = json.loads(manifest_path.read_text())
+    calibration = read_calibration(manifest_path.parent / "calibration.json")
+    if calibration["camera_resolution"] != (320, 240) or not calibration["camera_projectors"]:
+        raise RuntimeError("Example calibration does not describe its camera/projector pair")
     frames = manifest["artifacts"]["camera_files"]
     if len(frames) != 4:
         raise RuntimeError(f"Expected four example frames, found {len(frames)}")

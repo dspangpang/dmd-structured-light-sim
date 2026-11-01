@@ -5,8 +5,8 @@ import numpy as np
 from calc_params import get_camera_parameters
 from pixel_coordinates import PIXEL_COORDINATE_CONTRACT
 
-from gwcam_calibration_io import (
-    SCHEMA as CALIBRATION_SCHEMA, FILENAME as CALIBRATION_FILENAME, read_gwcam_calibration,
+from calibration_io import (
+    SCHEMA as CALIBRATION_SCHEMA, FILENAME as CALIBRATION_FILENAME,
 )
 
 
@@ -52,55 +52,15 @@ def calibration_structure(cfg, projector_resolution=None, *, parameters=None):
               "projector_coordinate_domain": "blender_projector_raster",
               "scene_config_sha256": cfg.APP_SCENE_CONFIG_SHA256,
               "reference_camera": reference, "devices": devices,
-              "device_transforms": pairs,
-              "camera_intrinsic_matrix": devices[reference]["K"],
-              "camera_distortion": devices[reference]["distortion"],
-              "camera_image_size": opencv_matrix(np.array(devices[reference]["image_size"]).reshape(2, 1))}
-    if "Projector" in devices:
-        pair = pairs[reference]["Projector"]
-        transform = np.array(pair["data"]).reshape(4, 4)
-        result.update(dlp_intrinsic_matrix=devices["Projector"]["K"],
-                      dlp_distortion=devices["Projector"]["distortion"],
-                      dlp_image_size=opencv_matrix(np.array(projector_resolution).reshape(2, 1)),
-                      dlp_rotation_matrix=opencv_matrix(transform[:3, :3]),
-                      dlp_tanslation_matrix=opencv_matrix(transform[:3, 3:4]),
-                      T_cam_2_proj=pair)
+              "device_transforms": pairs}
     return result
 
 
-def save_gwcam_calibration(cfg, output_dir, projector_resolution=None, *, parameters=None):
+def save_calibration(cfg, output_dir, projector_resolution=None, *, parameters=None):
     result = calibration_structure(cfg, projector_resolution, parameters=parameters)
     path = Path(output_dir) / CALIBRATION_FILENAME
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n", encoding="utf-8")
     temporary.replace(path)
-    return result
-
-
-def load_reconstruction_calibrations(path):
-    """Load gwCamSDK fields for every explicitly paired camera; JSON only."""
-    parsed = read_gwcam_calibration(path)
-    devices = parsed["devices"]
-    cameras = {n:d for n,d in devices.items() if d["kind"] == "camera"}
-    pairing = parsed["camera_projectors"]
-    if not pairing:
-        raise ValueError("Reconstruction requires a projector paired with each camera")
-    result = {}
-    for name, camera in cameras.items():
-        projector = devices[pairing[name]]
-        a = np.asarray(camera["world_to_device"], dtype=float)
-        b = np.asarray(projector["world_to_device"], dtype=float)
-        transform = np.eye(4)
-        transform[:3,:3] = b[:,:3] @ a[:,:3].T
-        transform[:3,3] = b[:,3] - transform[:3,:3] @ a[:,3]
-        result[name] = {"_camera_world_to_camera_rt": a,
-            "camera_intrinsic_matrix": np.asarray(camera["K"], dtype=float),
-            "camera_distortion": np.asarray(camera.get("distortion", [[0.] * 5]), dtype=float),
-            "camera_image_size": np.array(camera["image_size"],dtype=float).reshape(2,1),
-            "dlp_intrinsic_matrix": np.asarray(projector["K"], dtype=float),
-            "dlp_distortion": np.asarray(projector.get("distortion", [[0.] * 5]), dtype=float),
-            "dlp_image_size": np.array(projector["image_size"],dtype=float).reshape(2,1),
-            "dlp_rotation_matrix": transform[:3,:3],
-            "dlp_tanslation_matrix": transform[:3,3:4], "T_cam_2_proj": transform}
     return result

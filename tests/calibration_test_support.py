@@ -10,6 +10,6 @@ def write_calibration(path, size, cameras, projector=None):
     if projector:
         psize,k,rt=projector
         devices['Projector']={'kind':'projector','image_size':list(psize),'K':matrix(k),'world_to_device':matrix(rt)}
-    value={'schema':'core-sim.gwcam-calib.v1','pixel_coordinate_contract':'opencv_integer_centers_v1','translation_unit':'meter','reference_camera':next(iter(cameras)),'devices':devices}
+    value={'schema':'dmd-sim.calibration.v1','pixel_coordinate_contract':'opencv_integer_centers_v1','translation_unit':'meter','reference_camera':next(iter(cameras)),'devices':devices}
     path.parent.mkdir(parents=True,exist_ok=True)
     path.write_text(json.dumps(value))

@@ -1,26 +1,18 @@
-# Release preparation validation — 2026-10-31
+# 验证记录：2026-11-01
 
-Validation used a new Python 3.10 virtual environment installed from the
-published dependency files, and Blender 4.5.3 LTS on Linux with CPU rendering.
-Exact installed versions are in `requirements-tested.txt`.
+在全新的 Python 3.10 虚拟环境中，仅通过 `requirements.txt` 安装依赖，
+使用 Linux 和 Blender 4.5.3 LTS 进行 CPU 渲染验证。依赖检查通过。
 
-- Python suite: 57 tests, 56 passed, 1 skipped because no implicit branch-default
-  request is selected. Both public examples are tested explicitly.
-- Both DMD examples: four distinct 320×240 camera frames, without clipping;
-  float EXR, depth, world-space point clouds and complete manifests verified.
-- Each planar example produced 76,800 points. The 99th-percentile absolute
-  world Z residual was approximately 1.21e-7 m against the analytic plane.
-- Actual Blender camera and projector pixel checks passed, including portrait
-  projection. The largest rendered pixel check residual was about 0.00408 px.
-- Primitive material/rotation parameters were checked on real Blender objects.
-- The Diamond `--validate-only` route and repaired checkerboard scene-validation
-  branch passed; those checks do not constitute full calibration datasets.
-- DLP4500 mappings preserve all 1,039,680 input values with unique output pixels;
-  the inverse mappings and paired roll are covered by unit tests.
+- 单元测试共 57 项：56 项通过，1 项因未指定隐式默认场景而跳过；两个公开示例均显式测试。
+- 正交 DMD、Diamond-DMD 示例各输出 4 张不同的 320×240 相移图像，图像无饱和裁切，
+  浮点 EXR、深度、点云、标定文件及完成清单均验证通过。
+- 新的 `calibration.json` 可由独立读取器解析，相机尺寸与相机/投影仪配对正确。
+- 每个平面示例生成 76,800 个点，世界坐标 Z 残差绝对值的 99 分位数约为 1.21e-7 米。
+- Blender 相机、投影仪及纵向投影的像素检查通过，最大渲染像素残差约为 0.00408 像素。
+- 实际 Blender 对象上的材质、旋转和缩放检查通过。
+- Diamond 的 `--validate-only` 和棋盘格场景校验入口通过。
+- DLP4500 的全部 1,039,680 个输入像素映射唯一，像素值、逆映射和配套旋转检查通过。
 
-These are synthetic functionality and geometry checks, not phase-reconstruction
-accuracy, a comparison between DMD hardware, or a new experimental result.
-Machine-readable results and preview hashes are in [validation.json](validation.json).
-
-The two README previews are newly rendered procedural examples. Historical
-research outputs and private datasets were not copied or regenerated.
+本次重新渲染的两张首帧图像与首页预览的像素逐点一致。详细数值、依赖环境及预览文件校验值
+见 [validation.json](validation.json)。以上记录用于验证仿真功能和几何一致性，
+不代表相位重建精度或真实硬件性能。

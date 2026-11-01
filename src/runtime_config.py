@@ -7,7 +7,7 @@ class RuntimeConfig:
 
     Device intrinsics and pose/projection matrices stay unset until
     ``app_scene_config.apply_app_scene_config`` injects the authoritative
-    current StructuredLightViewer scene. They are adapter fields, not Blender
+    current simulation scene scene. They are adapter fields, not Blender
     parameter defaults. User-facing scene variants must never be implemented by
     subclassing this class.
     """

@@ -1,18 +1,13 @@
-# DMD Structured-Light Simulator
+# DMD 结构光仿真环境
 
-A Blender/Cycles environment for single-camera structured-light simulation with
-**orthogonal DMD** and **Diamond-DMD (DLP4500)** projectors. Configure a camera,
-projector, target and image sequence, then render camera images, float images,
-depth and world-space point clouds. No gwCamSDK installation, NAS data or
-downloaded target models are needed for the bundled examples.
+基于 Blender/Cycles 的单相机、单投影仪结构光仿真工具，支持**正交 DMD**和
+**Diamond-DMD（DLP4500）**。通过 JSON 配置设备、图案、目标和材质，输出相机图像、
+浮点图像、深度、点云及标定参数。
 
-中文使用说明：[README.zh-CN.md](README.zh-CN.md)。
+## 安装与运行
 
-## Quick start
-
-Tested on Linux with Blender **4.5.3**, Python **3.10** and CPU rendering.
-Install Blender separately. Blender's bundled Python already includes NumPy;
-the following dependencies are for the external preparation tools.
+已验证环境：Linux、Python 3.10、Blender 4.5.3。先单独安装 Blender，
+再安装本仓库唯一的 Python 依赖文件：
 
 ```bash
 git clone https://github.com/dspangpang/dmd-structured-light-sim.git
@@ -20,92 +15,84 @@ cd dmd-structured-light-sim
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-export BLENDER_BIN=/path/to/blender
+export BLENDER_BIN=/你的/Blender/可执行文件
 
+# 正交 DMD
 python scripts/run_simulation.py --config examples/orthogonal/scene.json --output output/orthogonal
+
+# Diamond-DMD
 python scripts/run_simulation.py --config examples/diamond/scene.json --output output/diamond
 ```
 
-The examples generate four phase-shifted sinusoidal images and a planar target.
-They use CPU rendering, 320×240 camera images, and 8 samples per pixel.
-These settings are for checking the workflow, not an accuracy benchmark.
-Output directories must be new: previous inputs and results are never overwritten.
+两个示例自动生成平面目标和四步相移正弦图案，采用 CPU 渲染，输出 320×240 相机图像。
+每次运行请指定一个新输出目录；已有目录不会被覆盖。
 
-Use `--prepare-only` to create inputs without Blender, or `--validate-only` to
-build and check the Blender scene without capturing images. `--blender-bin`
-overrides `BLENDER_BIN`, the compatibility variable `BLENDER`, and `PATH`.
-
-| Orthogonal example | Diamond example |
+| 正交 DMD 示例 | Diamond-DMD 示例 |
 |---|---|
-| ![Orthogonal DMD render](docs/images/orthogonal.png) | ![Diamond-DMD render](docs/images/diamond.png) |
+| ![正交 DMD 渲染](docs/images/orthogonal.png) | ![Diamond-DMD 渲染](docs/images/diamond.png) |
 
-These are newly rendered procedural examples, not experimental captures.
+## 两种 DMD
 
-## Two projector types
+| 类型 | 配置中的逻辑分辨率 | 仿真投影纹理 |
+|---|---|---|
+| `orthogonal` | 宽、高均可配置 | 与逻辑图像相同 |
+| `diamond` | DLP4500：912×1140 | 逐像素映射到 1481×1482 载体，并匹配投影仪旋转 |
 
-| Type | Logical input | Blender texture | Geometry |
-|---|---|---|---|
-| `orthogonal` | Configurable width × height | Same raster | Orthogonal square pixels |
-| `diamond` | DLP4500: 912 × 1140 | 1481 × 1482 carrier raster | Staggered logical mapping and matched −45° projector roll |
+Diamond 的载体尺寸用于仿真纹理，不是设备上传尺寸。坐标映射保存在
+`inputs/dmd_mapping.json`；导出的投影仪内参对应载体坐标。
+当前采用几何投影与纹理成像模型，不包含微镜时序、衍射或实测光学 PSF。
 
-Diamond inputs are **not resized** to the carrier raster. Each logical value is
-assigned to its mapped carrier pixel. The generated `dmd_mapping.json` records
-the logical, native and carrier coordinate domains and inverse transforms.
-See [DMD coordinates](docs/dmd_coordinates.md).
+## 修改配置
 
-This is a geometric, pinhole, texture-based image-formation model. It does not
-model micromirror switching dynamics, diffraction or a measured device PSF.
-Both camera and carrier raster use square pixels and centered principal points.
-The initial release supports one camera and one projector.
+复制一个示例的 `scene.json`，按需修改：
 
-## Configuration and outputs
+- `camera`、`projector`：位置、朝向、分辨率、焦距、像元尺寸。
+- `patterns`：自动生成正弦图案，或提供按采集顺序排列的灰度图文件列表。
+- `target`：平面、方盒、圆柱或自定义模型，以及目标材质。
+- `render`、`capture`：采样数、CPU/GPU、投影亮度及输出类型。
 
-Copy an example JSON and edit camera/projector position, look-at target, focal
-length, pixel pitch, material or render settings. Dimensions are always `[width,
-height]`; positions are metres, focal lengths millimetres and pixel pitches
-micrometres. An explicit ordered image list can replace generated patterns.
-Custom OBJ/PLY targets are optional. See [configuration](docs/configuration.md).
+尺寸使用 `[宽, 高]`；位置单位为米，焦距为毫米，像元尺寸为微米。
+在运行命令后增加 `--prepare-only` 可只生成输入；增加 `--validate-only` 可在
+Blender 中建立场景并检查几何，不执行采集。完整字段见[配置说明](docs/configuration.md)。
 
-Each run contains:
+## 输出与目录
 
-- `inputs/`: configuration snapshot, ordered logical/projector images, mapping,
-  scene and render request, and input hashes.
-- `render/*/`: camera PNG/BMP images, requested EXR/depth/PLY files,
-  `gwcam-calib.json`, human-readable `params.txt`, and `render_manifest.json`.
-- `run.json`: `COMPLETE` after a real render, or `VALIDATED` for scene-only checks.
+运行结果保存在指定的输出目录中：
 
-Calibration matrices use OpenCV pixel centers and metre translations. The
-projector K/P matrices describe the **rendered carrier raster**; use the supplied
-mapping when consuming Diamond native coordinates. See [pixel coordinates](docs/pixel_coordinates.md).
+- `inputs/`：配置副本、图案、坐标映射和渲染请求。
+- 渲染子目录：相机图像、可选的浮点 EXR、深度、世界坐标 PLY 点云，
+  以及 `calibration.json`、`params.txt` 和 `render_manifest.json`。
+- `run.json`：运行状态；`COMPLETE` 表示完成渲染，`VALIDATED` 表示完成场景校验。
 
-## Validation
+仓库的主要目录如下：
+
+```text
+examples/     两种 DMD 的独立配置
+scripts/      运行、验证和后处理入口
+src/          配置、坐标、投影和渲染实现
+blender/      Blender 场景执行入口
+tests/        自动测试
+docs/         配置、坐标与验证说明
+3rdparty/     投影仪插件
+```
+
+## 验证
+
+安装 `requirements.txt` 后即可运行以下检查：
 
 ```bash
-python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 python scripts/validate_examples.py --output output/validation
 "$BLENDER_BIN" -b --factory-startup -t 2 --python-exit-code 1 --python tests/blender_pixel_coordinates.py
 ```
 
-The example validator checks four distinct, nonblank, nonsaturated frames per
-type, the declared artifacts, and planar world-space point clouds. Unit tests
-also check the complete DLP4500 pixel permutation and coordinate inverse.
-GitHub Actions runs the Python tests and both real CPU render examples.
-See the [release validation record](docs/validation.md) and
-`requirements-tested.txt` for the exact environment used locally.
+示例检查包括相移图像、辅助输出、标定文件、完成清单和点云几何。
+点云由深度真值生成；这些检查用于确认功能和坐标一致性。
+详见[验证记录](docs/validation.md)、[DMD 坐标](docs/dmd_coordinates.md)、
+[像素与标定坐标](docs/pixel_coordinates.md)和[标定板及后处理接口](docs/advanced.md)。
 
-## Advanced use
+## 许可证
 
-The low-level scene/render request interfaces, calibration-board renderers,
-GUI launcher and custom-asset batch tools remain available. Board captures
-require an explicit board plan; the simulator does not choose board poses.
-See [advanced interfaces](docs/advanced.md). Optional EXR blur/noise processing
-uses `requirements-postprocess.txt`. The optional gwCamSDK reconstruction adapter
-is in `integrations/gwcamsdk/` and is not needed by the simulator.
-
-## License and provenance
-
-Project code is **GPL-3.0-or-later**: GNU GPL version 3 or, at your option, any
-later version. Copyright © 2026 Jia Zhizhou and contributors. See [LICENSE](LICENSE).
-Bundled third-party code retains its own copyright and license notices; see
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [source provenance](SOURCE_PROVENANCE.md).
+项目代码采用 **GPL-3.0-or-later**。Copyright © 2026 Jia Zhizhou and contributors。
+第三方代码保留原作者及许可证声明，详见 [LICENSE](LICENSE) 和
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

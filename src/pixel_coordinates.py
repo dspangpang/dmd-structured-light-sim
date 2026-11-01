@@ -5,7 +5,7 @@ Blender NDC and image texture UVs instead address the image boundaries.
 The current scene adapter accepts only square pixels and full-frame renders.
 """
 
-from gwcam_calibration_io import PIXEL_COORDINATE_CONTRACT
+from calibration_io import PIXEL_COORDINATE_CONTRACT
 
 
 def ndc_to_opencv(x, y, width, height):

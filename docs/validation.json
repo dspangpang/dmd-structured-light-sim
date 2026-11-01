@@ -89,12 +89,11 @@
     }
   },
   "scene_options": "PASS",
-  "date": "2026-10-31",
   "environment": {
     "os": "Linux x86_64",
     "blender": "4.5.3 LTS",
     "python": "3.10",
-    "dependencies": "requirements-tested.txt",
+    "dependencies": "requirements.txt",
     "render_device": "CPU"
   },
   "unit_tests": {
@@ -103,25 +102,28 @@
     "skipped": 1,
     "skip_reason": "No implicit branch-default render request; examples require explicit configuration."
   },
-  "pixel_checks": {
-    "projection_max_error_px": 6.323680281639099e-05,
-    "cycles_camera_max_error_px": 0.002468109130859375,
-    "cycles_projector_max_error_px": 0.003482818603515625,
-    "cycles_portrait_projector_max_error_px": 0.004076957702636719
-  },
-  "checkerboard_scene_validation": "PASS",
-  "diamond_validate_only": "PASS",
   "scope": "Synthetic example functionality and geometric consistency; not reconstruction accuracy or hardware validation.",
   "previews": {
     "orthogonal": {
       "path": "docs/images/orthogonal.png",
       "sha256": "895b63cf6406671adef6593379f4c66ab65f0fe7f38bf5bb3d87b21ce522a9bc",
-      "source": "procedural plane, first phase frame from the bundled configuration"
+      "source": "procedural plane, first phase frame from the bundled configuration",
+      "pixel_match_revalidated": "2026-11-01"
     },
     "diamond": {
       "path": "docs/images/diamond.png",
       "sha256": "d74bfda1c1efaaaac2c3daa4872abe8f8049ddfc60948d46747b0fa0d0b1f37a",
-      "source": "procedural plane, first phase frame from the bundled configuration"
+      "source": "procedural plane, first phase frame from the bundled configuration",
+      "pixel_match_revalidated": "2026-11-01"
     }
-  }
+  },
+  "date": "2026-11-01",
+  "pixel_checks": {
+    "cycles_camera_max_error_px": 0.002468109130859375,
+    "cycles_portrait_projector_max_error_px": 0.004076957702636719,
+    "cycles_projector_max_error_px": 0.003482818603515625,
+    "projection_max_error_px": 6.323680281639099e-05
+  },
+  "diamond_validate_only": "PASS",
+  "checkerboard_scene_validation": "PASS"
 }

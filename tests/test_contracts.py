@@ -75,7 +75,7 @@ def scene_contract(
         camera_records["left"] = device_record(camera_k, "left")
     projector_record = device_record(projector_k, "projector")
     return {
-        "schema": "gwcam_structured_light_scene",
+        "schema": "dmd-sim.render-scene.v1",
         "camera": {
             "model": "pinhole",
             "width_px": camera_width,
@@ -195,9 +195,9 @@ class CalibrationPlanTests(unittest.TestCase):
                 APP_COMMON_VIEW_AREA_MM2=1.0,
             )
             plan = {
-                "schema": "gwcam_calibration_board_plan",
+                "schema": "dmd-sim.calibration-board-plan.v1",
                 "scene_contract": {
-                    "schema": "gwcam_structured_light_scene",
+                    "schema": "dmd-sim.render-scene.v1",
                     "path": "/old/machine/scene.json",
                 },
                 "common_view_contract": {
@@ -366,7 +366,7 @@ class RenderManifestTests(unittest.TestCase):
         return SimpleNamespace(
             APP_SCENE_CONFIG_PATH=str(scene_path),
             APP_SCENE_CONFIG_SHA256=hashlib.sha256(scene_path.read_bytes()).hexdigest(),
-            APP_SCENE_CONFIG_SCHEMA="gwcam_structured_light_scene",
+            APP_SCENE_CONFIG_SCHEMA="dmd-sim.render-scene.v1",
             RENDER_PRESET="default",
             ENGINE="CYCLES",
             SAMPLES=1,

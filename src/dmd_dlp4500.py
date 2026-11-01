@@ -6,7 +6,7 @@ and 1140 rows.  The larger output is a simulator-only carrier raster; it is not
 the Diamond-DMD image size, upload size, or calibration coordinate domain.
 Blender consumes the carrier and applies the matching projector roll, while
 the mapping manifest preserves the 1824x1140 native ``(U, V)`` coordinate
-domain for downstream consumers. This module has no gwCamSDK dependency.
+domain for downstream consumers.
 """
 
 from __future__ import annotations
@@ -30,11 +30,11 @@ DEFAULT_SUFFIX = "_dlp4500_preprojected"
 DEFAULT_MAPPING_FILENAME = "carrier_mapping.json"
 DEFAULT_ORIENTATION = "plus45"
 BACKGROUND_GRAY = 0
-CARRIER_MAPPING_SCHEMA = "gwcam_diamond_dmd_rotated45_carrier_v1"
+CARRIER_MAPPING_SCHEMA = "dmd-sim.diamond-carrier.v1"
 ORIENTATION_TO_PROJECTOR_ROLL_DEG = {
     # SceneGeometry defines image-right/image-down as board -X/-Y before
     # applying the roll.  The carrier orientation therefore pairs with the
-    # opposite signed App roll: plus45 + (-45 deg) restores native U to board
+    # opposite signed projector roll: plus45 + (-45 deg) restores native U to board
     # horizontal and native V to board vertical.
     "plus45": -45.0,
     "minus45": 45.0,

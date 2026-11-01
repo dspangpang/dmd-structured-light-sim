@@ -160,7 +160,7 @@ def build_scene_contract(raw, mapping):
     _, camera_basis = _basis(raw["camera"])
     _, projector_basis = _basis(raw["projector"])
     toe_in = math.degrees(math.acos(float(np.clip(camera_basis[:, 2] @ projector_basis[:, 2], -1, 1))))
-    return {"schema": "gwcam_structured_light_scene", "authority": SCHEMA,
+    return {"schema": "dmd-sim.render-scene.v1", "authority": SCHEMA,
         "camera": camera, "projector": projector,
         "rig": {"camera_count": 1, "stereo_enabled": False, "work_distance_mm": distance * 1000,
                 "baseline_mm": baseline * 1000,

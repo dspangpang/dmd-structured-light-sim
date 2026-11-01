@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 source "$ROOT/scripts/blender_env.sh"
 BLENDER_EXECUTABLE="$(resolve_blender_bin)"
-SCENE_CONFIG="${SCENE_CONFIG:-${GWCAM_STRUCTURED_LIGHT_SCENE_CONFIG:-}}"
+SCENE_CONFIG="${SCENE_CONFIG:-${DMD_SCENE_CONFIG:-}}"
 PROJECTOR_IMAGES="${PROJECTOR_IMAGES:-}"
 HAS_RENDER_REQUEST=false
 if [[ -n "${SIM_RENDER_REQUEST:-}" ]]; then

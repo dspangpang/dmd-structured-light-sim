@@ -310,11 +310,11 @@ def main() -> int:
         "--scene-config",
         type=Path,
         default=(
-            Path(os.environ["GWCAM_STRUCTURED_LIGHT_SCENE_CONFIG"])
-            if os.environ.get("GWCAM_STRUCTURED_LIGHT_SCENE_CONFIG")
+            Path(os.environ["DMD_SCENE_CONFIG"])
+            if os.environ.get("DMD_SCENE_CONFIG")
             else None
         ),
-        help="Current StructuredLightViewer JSON shared by every task in this batch.",
+        help="Current simulation scene JSON shared by every task in this batch.",
     )
     parser.add_argument(
         "--dry-run",
@@ -370,7 +370,7 @@ def main() -> int:
     extra_args.extend(cli_extra_args)
     if args.scene_config is None:
         parser.error(
-            "--scene-config (or GWCAM_STRUCTURED_LIGHT_SCENE_CONFIG) is required"
+            "--scene-config (or DMD_SCENE_CONFIG) is required"
         )
     scene_config = args.scene_config.expanduser().resolve()
     if not scene_config.is_file():

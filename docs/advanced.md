@@ -17,7 +17,7 @@ a display and is not part of the headless CPU example test.
 `blender/render_calibration_checkerboard.py` and
 `blender/render_calibration_circle_grid.py` consume externally supplied board
 plans. The plan describes board dimensions, explicit poses, the scene contract
-and the associated view metadata. They retain the inherited plan schema and
+and the associated view metadata. They use `dmd-sim.calibration-board-plan.v1` (or `dmd-sim.circle-grid-plan.v1`) and
 do not generate poses. A planned-board dataset is optional, not an installation
 dependency. Shell wrappers accept `SCENE_CONFIG`, `CALIBRATION_BOARD_PLAN`,
 and, for circle grids, `PROJECTOR_IMAGES`.
@@ -31,7 +31,6 @@ the bundled standalone examples use `scripts/run_simulation.py`.
 ## Float EXR postprocessing
 
 ```bash
-python -m pip install -r requirements-postprocess.txt
 python scripts/blur_float_exr_gaussian.py --help
 ```
 
@@ -40,10 +39,3 @@ quantization to scalar EXR data. Pass explicit input/output paths and set a nois
 seed for reproducibility. Its historic no-argument paths are not demo datasets.
 The external environment needs OpenCV, NumPy and the modern `OpenEXR.File` API;
 the Blender environment does not need these extra packages for ordinary renders.
-
-## SDK reconstruction integration
-
-`integrations/gwcamsdk/batch_recon_blender_sim.py` is an optional adapter to an
-existing, built gwCamSDK checkout. It requires that SDK's reconstruction binary
-and fringe metadata; use explicit `--gwcam-root` and `--fringe-config` options.
-Neither the native SDK nor its reconstruction methods are bundled here.

@@ -18,7 +18,7 @@ from calibration_board_plan import (
     load_calibration_board_plan,
     snapshot_calibration_board_plan,
 )
-from gwcam_calibration import save_gwcam_calibration
+from calibration import save_calibration
 from blender_parameters import save_blender_parameters
 from cli import parse_blender_args
 from app_scene_config import snapshot_app_scene_config
@@ -145,7 +145,7 @@ def main():
     if not plan_path:
         raise ValueError(
             "Calibration rendering requires --calibration-board-plan. "
-            "Generate it in the gwCamSDK paper experiment directory first."
+            "Supply a JSON board plan with board dimensions and explicit poses."
         )
     loaded_plan = load_calibration_board_plan(
         plan_path,
@@ -189,7 +189,7 @@ def main():
         snapshot_app_scene_config(cfg, sequence_dir)
         snapshot_render_request(cfg, sequence_dir)
         snapshot_calibration_board_plan(loaded_plan, sequence_dir)
-        save_gwcam_calibration(
+        save_calibration(
             cfg,
             sequence_dir,
             projector_resolution=projector_resolution,

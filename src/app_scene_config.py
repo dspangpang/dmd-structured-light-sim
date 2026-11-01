@@ -1,4 +1,4 @@
-"""Import the scene contract exported by gwCamSDK StructuredLightViewer."""
+"""Import and validate the expanded DMD simulation scene contract."""
 
 import json
 from pixel_coordinates import camera_lens_shift, projector_lens_shift
@@ -10,7 +10,7 @@ import shutil
 from pathlib import Path
 
 
-SCENE_SCHEMA = "gwcam_structured_light_scene"
+SCENE_SCHEMA = "dmd-sim.render-scene.v1"
 
 
 def _canonical_json_sha256(value):
@@ -43,7 +43,7 @@ def _validate_current_scene(root):
     schema = str(root.get("schema", ""))
     if schema != SCENE_SCHEMA:
         raise ValueError(
-            f"Unsupported StructuredLightViewer schema {schema!r}; "
+            f"Unsupported simulation scene schema {schema!r}; "
             f"expected the current {SCENE_SCHEMA!r} contract"
         )
     mask = root.get("mask")
@@ -305,7 +305,7 @@ def load_app_scene_config(path):
     with config_path.open("r", encoding="utf-8") as stream:
         root = json.load(stream)
     if not isinstance(root, dict):
-        raise ValueError("StructuredLightViewer config root must be a JSON object")
+        raise ValueError("simulation scene config root must be a JSON object")
     _validate_current_scene(root)
 
     for section in ("camera", "projector", "rig"):
@@ -358,7 +358,7 @@ def apply_app_scene_config(cfg, path):
 
     cfg.APP_SCENE_CONFIG_PATH = str(config_path)
     cfg.APP_SCENE_CONFIG_SCHEMA = str(root["schema"])
-    cfg.APP_SCENE_CONFIG_AUTHORITY = str(root.get("authority", "gwCamSDK StructuredLightViewer"))
+    cfg.APP_SCENE_CONFIG_AUTHORITY = str(root.get("authority", "dmd-structured-light-sim"))
     cfg.APP_SCENE_CONFIG_SHA256 = hashlib.sha256(config_path.read_bytes()).hexdigest()
 
     cfg.CAMERA_TOPOLOGY = "dual" if bool(rig.get("stereo_enabled", False)) else "single"
@@ -505,7 +505,7 @@ def snapshot_app_scene_config(cfg, output_dir):
 
 
 def scene_config_from_argv(argv):
-    path = os.environ.get("GWCAM_STRUCTURED_LIGHT_SCENE_CONFIG", "").strip()
+    path = os.environ.get("DMD_SCENE_CONFIG", "").strip()
     for index, key in enumerate(argv):
         if key in {"--scene-config", "--structured-light-scene-config"}:
             if index + 1 >= len(argv):

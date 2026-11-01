@@ -1,10 +1,10 @@
-"""Strict reader for core-sim's OpenCV calibration artifact; no text fallback."""
+"""Strict reader for the simulator's OpenCV calibration artifact; no text fallback."""
 import json
 import math
 from pathlib import Path
 
-SCHEMA = 'core-sim.gwcam-calib.v1'
-FILENAME = 'gwcam-calib.json'
+SCHEMA = 'dmd-sim.calibration.v1'
+FILENAME = 'calibration.json'
 PIXEL_COORDINATE_CONTRACT = 'opencv_integer_centers_v1'
 
 
@@ -17,10 +17,10 @@ def matrix(value, rows, cols):
     return [[float(x) for x in data[r*cols:(r+1)*cols]] for r in range(rows)]
 
 
-def read_gwcam_calibration(path):
+def read_calibration(path):
     root = json.loads(Path(path).read_text(encoding='utf-8'))
     if not isinstance(root, dict) or root.get('schema') != SCHEMA:
-        raise ValueError(f'Expected {SCHEMA}: {path}; regenerate with current core-sim')
+        raise ValueError(f'Expected {SCHEMA}: {path}; regenerate with the current simulator')
     if root.get('pixel_coordinate_contract') != PIXEL_COORDINATE_CONTRACT or root.get('translation_unit') != 'meter':
         raise ValueError(f'Unsupported calibration coordinates or units: {path}')
     devices = {}

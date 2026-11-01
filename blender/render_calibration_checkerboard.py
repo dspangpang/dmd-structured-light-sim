@@ -17,7 +17,7 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 from app_scene_config import snapshot_app_scene_config
-from gwcam_calibration import save_gwcam_calibration
+from calibration import save_calibration
 from blender_parameters import save_blender_parameters
 from calibration_board_plan import (
     load_calibration_board_plan,
@@ -158,7 +158,7 @@ def main():
 
         white_image = _create_white_projector_image(cfg, sequence_dir)
         cfg.PROJECTOR_IMAGE = white_image
-        save_gwcam_calibration(
+        save_calibration(
             cfg,
             sequence_dir,
             projector_resolution=projector_resolution,

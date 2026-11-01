@@ -1,9 +1,8 @@
 # Standalone configuration
 
 The public input schema is `dmd-sim.scene.v1`. Start with either bundled
-`examples/*/scene.json`. Unknown fields are rejected. The generated renderer
-contract retains the `gwcam_structured_light_scene` name for compatibility;
-it does not require gwCamSDK or StructuredLightViewer.
+`examples/*/scene.json`. Unknown fields are rejected. The runner expands it
+into the renderer's `dmd-sim.render-scene.v1` contract automatically.
 
 ## Devices and units
 

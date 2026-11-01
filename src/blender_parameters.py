@@ -51,5 +51,5 @@ def save_blender_parameters(cfg, output_dir):
                            "pixel_aspect_x", "pixel_aspect_y", "use_border", "use_crop_to_border")},
                "objects": records}
     Path(output_dir, "params.txt").write_text(
-        "Blender native parameters (OpenCV calibration is in gwcam-calib.json)\n" +
+        "Blender native parameters (OpenCV calibration is in calibration.json)\n" +
         json.dumps(payload, indent=2) + "\n", encoding="utf-8")

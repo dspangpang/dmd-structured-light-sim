@@ -1,58 +1,38 @@
-# Pixel coordinates at the Blender boundary
+# 像素与标定坐标
 
-All imported and exported K/P matrices use OpenCV coordinates: (0,0) is the
-center of the first pixel, u points right and v down. Fractional points remain
-valid. Image support is [-0.5,W-0.5] x [-0.5,H-0.5]. Blender NDC/texture UV
-coordinates address image edges: u=W*s-0.5, v=H*(1-t)-0.5.
+导入和导出的 K/P 矩阵均采用 OpenCV 像素坐标：(0, 0) 表示第一个像素的中心，
+u 向右、v 向下，图像范围为 `[-0.5, W-0.5] × [-0.5, H-0.5]`。
+Blender 的 NDC/纹理 UV 对应图像边界，换算为 `u=W*s-0.5`、`v=H*(1-t)-0.5`。
+`src/pixel_coordinates.py` 在 Blender 接口处执行该换算和镜头偏移适配。
+导出的内参、深度数组和图像无需再次添加半像素偏移。
 
-`src/pixel_coordinates.py` owns this conversion and the square-pixel lens-shift
-adapters. The renderer retains the imported K, converts only at the Blender
-boundary, and validates the effective projection in OpenCV coordinates.
-Centered principal points require zero camera and projector lens shift.
-Do not translate images, depth arrays, camera ray indices or exported K again.
-The vertical image-buffer flip is independent of the half-pixel conversion.
+## 标定文件
 
-`gwcam-calib.json` is the only machine-readable calibration artifact. It uses
-schema `core-sim.gwcam-calib.v1`, OpenCV integer centers and metre translations.
-It records every device by name, world-to-device transforms, and relative
-transforms `X_target = R X_source + t`. The top-level camera/projector fields
-match gwCamSDK (including its existing `dlp_tanslation_matrix` field spelling).
-They refer to the explicitly named `reference_camera`. All matrices retain full
-JSON floating-point precision. Projector coordinates address the rendered raster;
-Diamond domain conversions belong to the downstream application.
+`calibration.json` 使用 `dmd-sim.calibration.v1` 格式，平移单位为米，设备坐标轴为
+X 向右、Y 向下、Z 向前。主要字段为：
 
-`params.txt` is now a human-readable Blender native state snapshot: object
-world/local matrices, camera lens/sensor/shift, render dimensions and projector
-texture nodes. It is written only after a scene exists. Metadata-only runs export
-validated input calibration JSON but do not claim to snapshot native objects.
-Neither artifact is parsed from the other. The old text matrix format and parser
-are removed; old data must be regenerated. Both outputs identify their scene hash.
+| 字段 | 内容 |
+|---|---|
+| `devices` | 各相机和投影仪的尺寸、K、畸变、世界到设备变换及 P |
+| `reference_camera` | 参考相机名称 |
+| `device_transforms` | 相机到其他设备的相对变换，满足 `X_target = R X_source + t` |
+| `scene_config_sha256` | 本次场景配置的校验值 |
+| `projector_coordinate_domain` | 投影仪矩阵所描述的纹理坐标域 |
 
-Use `save_gwcam_calibration(cfg, output_dir, projector_resolution)` from
-`src/gwcam_calibration.py`; it does not require bpy. Derived viewpoints supply
-explicit transformed device parameters via `parameters=`.
+矩阵保留 JSON 浮点精度。Diamond 投影仪的矩阵对应载体纹理，逻辑/原生坐标需通过
+`inputs/dmd_mapping.json` 转换。`params.txt` 记录供人阅读的 Blender 对象矩阵、
+镜头和纹理状态；程序应读取 `calibration.json`。
 
-Run unit tests with `python -m unittest discover -s tests`. Verify actual Blender
-projection and Cycles pixels with `blender -b --factory-startup -t 2 --python
-tests/blender_pixel_coordinates.py` (use an absolute script path when a launcher
-changes the working directory). This test writes only to a temporary folder.
+## 读写接口
 
-## Reading calibration without Blender
+`src/calibration.py` 提供 `save_calibration(cfg, output_dir, projector_resolution)`，
+可用 `parameters=` 传入显式设备参数。
+`src/calibration_io.py` 提供 `read_calibration(path)`，仅依赖 Python 标准库，
+负责验证矩阵、单位、内外参一致性和相机/投影仪配对。返回的 `devices` 中矩阵为
+普通二维列表；多投影仪数据需通过 `camera_projectors` 显式指定配对。
 
-`src/gwcam_calibration_io.py` owns the schema constants, matrix validation and
-`read_gwcam_calibration(path)`. It uses only Python's standard library and never
-imports bpy, NumPy, configuration or variant modules. The returned dictionary has
-`devices`, `reference_camera`, `camera_projectors`, per-device image sizes, and
-`raw` for additional serialized fields. World-to-device matrices may have either
-orthonormal basis handedness; relative poses are checked against the devices.
-Multi-projector artifacts must explicitly map each camera to its projector.
+真实 Blender 投影和 Cycles 像素检查可从仓库根目录运行：
 
-`load_reconstruction_calibrations(path)` in `gwcam_calibration.py` delegates all
-reading and validation to this module, then constructs the NumPy matrices needed
-by reconstruction. It requires camera/projector pairs; the basic reader also
-supports camera-only stereo data. No parser for old text output is provided.
-
-External pipelines load this file from their selected simulator checkout by
-absolute module path (not a global `sys.path` insertion). This allows separate
-simulator versions in one Python process. Selecting a simulator without this API
-is an error; readers never silently fall back to a different checkout.
+```bash
+"$BLENDER_BIN" -b --factory-startup -t 2 --python-exit-code 1 --python tests/blender_pixel_coordinates.py
+```

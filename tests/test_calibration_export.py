@@ -6,7 +6,8 @@ import numpy as np
 from test_contracts import compatible_scene_contract
 from runtime_config import RuntimeConfig
 from app_scene_config import apply_app_scene_config
-from gwcam_calibration import save_gwcam_calibration
+from calibration import save_calibration
+from calibration_io import read_calibration, SCHEMA
 
 
 class CalibrationExportTests(unittest.TestCase):
@@ -17,9 +18,12 @@ class CalibrationExportTests(unittest.TestCase):
             scene.write_text(json.dumps(compatible_scene_contract()))
             cfg = RuntimeConfig()
             apply_app_scene_config(cfg, scene)
-            result = save_gwcam_calibration(cfg, root, (800, 600))
-            loaded = json.loads((root / "gwcam-calib.json").read_text())
+            result = save_calibration(cfg, root, (800, 600))
+            loaded = json.loads((root / "calibration.json").read_text())
             self.assertEqual(result, loaded)
+            self.assertEqual(loaded["schema"], SCHEMA)
+            parsed = read_calibration(root / "calibration.json")
+            self.assertEqual(set(parsed["devices"]), set(loaded["devices"]))
             self.assertFalse((root / "params.txt").exists())
             self.assertEqual(loaded["pixel_coordinate_contract"], "opencv_integer_centers_v1")
             for device in cfg.APP_CAMERA_DEVICES:

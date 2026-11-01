@@ -1,7 +1,7 @@
 """Transactional provenance manifest for every Blender render entry."""
 
 from pixel_coordinates import PIXEL_COORDINATE_CONTRACT
-from gwcam_calibration import CALIBRATION_SCHEMA
+from calibration import CALIBRATION_SCHEMA
 
 import hashlib
 import json
@@ -208,7 +208,7 @@ class RenderRun:
         if self.path.is_file():
             existing = json.loads(self.path.read_text(encoding="utf-8"))
             if existing.get("request", {}).get("calibration_schema") != CALIBRATION_SCHEMA:
-                raise ValueError("Legacy calibration output cannot be resumed; regenerate gwcam-calib.json")
+                raise ValueError("Legacy calibration output cannot be resumed; regenerate calibration.json")
             if existing.get("request", {}).get("pixel_coordinate_contract") != PIXEL_COORDINATE_CONTRACT:
                 raise ValueError(
                     "Output directory uses a legacy or incompatible pixel coordinate "
@@ -319,7 +319,7 @@ class RenderRun:
         }
         artifact_groups.update(self._extra_artifacts(extra_artifacts))
         parameter_records = []
-        for name in ("gwcam-calib.json", "params.txt"):
+        for name in ("calibration.json", "params.txt"):
             path = self.output_dir / name
             if path.is_file():
                 parameter_records.append({"path": name, "size_bytes": path.stat().st_size,

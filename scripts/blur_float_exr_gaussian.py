@@ -71,7 +71,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Apply a Gaussian PSF blur to float EXR render outputs. "
-            "Install the optional dependencies from requirements-postprocess.txt."
+            "Install dependencies from requirements.txt."
         )
     )
     parser.add_argument(
@@ -80,7 +80,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=[str(DEFAULT_INPUT)],
         help=(
             "Input EXR file(s) or directory/directories. Project-relative paths "
-            "starting with // are resolved from the diamond-dmd-sim root. "
+            "starting with // are resolved from the repository root. "
             f"Default: //output/calibration_circle_grid/{DEFAULT_NAME}"
         ),
     )
