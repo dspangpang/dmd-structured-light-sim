@@ -5,6 +5,13 @@
 基于 Blender/Cycles 的单相机、单投影仪结构光仿真，支持**正交 DMD**和
 **可配置行列数的 Diamond-DMD**。
 
+投影仪建模与纹理投影使用 **Jonas Schell** 开发的
+**[Projectors](https://github.com/Ocupe/Projectors)** Blender 插件（GPL-3.0-or-later）。
+本项目在此基础上提供两类 DMD 的适配、条纹序列仿真和标定真值导出。
+仓库内置了适配后的插件，运行脚本会自动加载，无需另行安装。
+插件修改记录见 [UPSTREAM.md](3rdparty/Projectors/UPSTREAM.md)，
+版权与许可证说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
 ## Blender 界面与四步相移示例
 
 ![Blender 窗口中的设备布置、球面条纹和四步相移时间轴](assets/blender-ui.gif)

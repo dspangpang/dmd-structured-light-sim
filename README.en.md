@@ -5,6 +5,14 @@
 A Blender/Cycles structured-light simulator with one camera and one projector,
 supporting **orthogonal DMD** and **Diamond-DMD with configurable row and column counts**.
 
+Projector modeling and texture projection use the
+**[Projectors](https://github.com/Ocupe/Projectors)** Blender add-on by **Jonas Schell**
+(GPL-3.0-or-later). This project builds on it to provide both DMD adaptations,
+fringe-sequence simulation and calibration ground-truth export. An adapted copy
+is bundled and loaded automatically by the scripts; no separate add-on installation
+is required. See [UPSTREAM.md](3rdparty/Projectors/UPSTREAM.md) for local changes and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for copyright and license details.
+
 ## Blender UI and four-step phase shifting
 
 ![Device setup, sphere fringes and phase-shift timeline in Blender](assets/blender-ui.gif)
