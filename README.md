@@ -85,6 +85,30 @@ Diamond 的载体尺寸不是硬件上传尺寸，导出的投影仪内参对应
 材质文件与对应 OBJ 放在同一目录。所有安装与测试依赖都在唯一的 `requirements.txt` 中。
 使用自己的设备 CAD 时，将 `visualization.camera_model.path` 和
 `visualization.projector_model.path` 指向本地 OBJ，并设置各自的 `rotation_deg`。
+自带外壳使用子对象局部旋转 `[90, 0, 0]`，将 OBJ 的前向轴对齐设备光轴；
+该设置只控制外壳朝向，光学设备的姿态仍由 `position_m`、`look_at_m` 和 `up` 决定。
+
+## 最小竖条纹 Gray 码与三维重建
+
+两个 Python 脚本提供“四步相移 + Gray 级次码 + 一张互补码”的最小示例，
+只支持竖条纹。Gray 位数由分辨率和周期自动确定。
+
+```bash
+# 1. 生成条纹、帧顺序和场景配置
+python scripts/generate_gray.py --config examples/orthogonal/scene.json --period 48 --output output/gray-input
+# 2. 用 Blender 渲染相机图像
+python scripts/run_simulation.py --config output/gray-input/scene.json --output output/gray-render
+# 3. 解码并使用标定真值进行三角测量
+python scripts/reconstruct_gray.py --run output/gray-render --sequence output/gray-input/sequence.json --output output/gray-reconstruction
+```
+
+第一步改用 `examples/diamond/scene.json` 即可运行 Diamond-DMD；每次使用新输出目录。
+这里 `--period` 至少为 8，以原生水平坐标 `U` 为单位：正交阵列为列号，
+Diamond 为 `U = 2 × 列号 + 行号奇偶性`，相邻逻辑列相隔 2 个单位。
+解码后结合 `calibration.json` 和 `dmd_mapping.json`，求相机射线与投影条纹平面的交点。
+输出 `points.ply` 和 `reconstruction.npz`（原生 `U`、世界坐标 XYZ、有效掩膜），长度单位为米。
+渲染目录中直接导出的深度和点云属于真值，可用于对照重建结果。
+该序列通过批量渲染运行；`--interactive` 演示仍使用前面的四张正弦条纹。
 
 ## 输出与验证
 

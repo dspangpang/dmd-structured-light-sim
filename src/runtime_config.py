@@ -68,11 +68,11 @@ class RuntimeConfig:
     PROJECTOR_TEXTURE_MIRROR_Y: bool = True
     PROJECTOR_TEXTURE_INTERPOLATION: str = "Linear"
     USE_PROJECTOR_MODEL: bool = False
-    PROJECTOR_MODEL_PATH: str = "//assets/models/LightCrafter4500/LightCrafter4500.obj"
+    PROJECTOR_MODEL_PATH: str = "//assets/models/projector.obj"
     PROJECTOR_MODEL_SCALE: float = 1.0
-    PROJECTOR_MODEL_ROT_X_DEG: float = 0.0
+    # Bundled OBJ meshes face -Y; X90 aligns them with the device's local -Z.
+    PROJECTOR_MODEL_ROT_X_DEG: float = 90.0
     PROJECTOR_MODEL_ROT_Y_DEG: float = 0.0
-    # The shared projector mesh already has the scene-convention Z180 baked in.
     PROJECTOR_MODEL_ROT_Z_DEG: float = 0.0
     PROJECTOR_MODEL_DISABLE_RENDER: bool = False
     PROJECTOR_MODEL_DISABLE_SHADOWS: bool = True
@@ -135,11 +135,11 @@ class RuntimeConfig:
 
     # Camera model visualization
     USE_CAMERA_MODEL: bool = False
-    CAMERA_MODEL_PATH: str = "//assets/models/camera/me2p_v1226.obj"
+    CAMERA_MODEL_PATH: str = "//assets/models/camera.obj"
     CAMERA_MODEL_SCALE: float = 1.0
-    CAMERA_MODEL_ROT_X_DEG: float = 0.0
-    CAMERA_MODEL_ROT_Y_DEG: float = 90.0
-    CAMERA_MODEL_ROT_Z_DEG: float = -90.0
+    CAMERA_MODEL_ROT_X_DEG: float = 90.0
+    CAMERA_MODEL_ROT_Y_DEG: float = 0.0
+    CAMERA_MODEL_ROT_Z_DEG: float = 0.0
 
     # Overview camera for publication/scene illustrations.
     USE_OVERVIEW_CAMERA: bool = False

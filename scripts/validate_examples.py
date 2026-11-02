@@ -17,6 +17,33 @@ from dmd_setup import write_json
 from render_manifest import completed_render_manifest
 from calibration_io import read_calibration
 from run_simulation import resolve_blender
+from generate_gray import generate
+from reconstruct_gray import reconstruct
+from exr_io import read_scalar_float_exr
+
+
+def inspect_gray(run, reconstruction):
+    """Depth truth is used only here for evaluation, never by the decoder."""
+    data = np.load(reconstruction / 'reconstruction.npz')
+    xyz, valid = data['xyz_world_m'], data['valid']
+    receipt = json.loads((run / 'run.json').read_text())
+    directory = (run / receipt['render_manifest']).parent
+    calibration = read_calibration(directory / 'calibration.json')
+    camera = calibration['reference_camera']
+    depth = read_scalar_float_exr(directory / 'proj_00000' / f'{camera}_depth.exr')
+    foreground = np.isfinite(depth) & (depth > 0) & (depth < 1e8)
+    matched = valid & foreground
+    rt = np.asarray(calibration['devices'][camera]['world_to_device'])
+    camera_z = (xyz @ rt[:, :3].T + rt[:, 3])[..., 2]
+    coverage = float(matched.sum() / max(foreground.sum(), 1))
+    if valid.sum() < 1000 or coverage < .8:
+        raise RuntimeError('Too few reconstructed sphere points')
+    sphere_error = float(np.quantile(np.abs(np.linalg.norm(xyz[valid], axis=-1) - .1), .99))
+    depth_error = float(np.quantile(np.abs(camera_z[matched] - depth[matched]), .99))
+    if not np.isfinite([sphere_error, depth_error]).all() or sphere_error > .001 or depth_error > .002:
+        raise RuntimeError(f'Gray reconstruction failed: sphere={sphere_error}, depth={depth_error} m')
+    return {'status': 'PASS', 'point_count': int(valid.sum()), 'foreground_coverage': coverage,
+            'sphere_error_p99_m': sphere_error, 'depth_error_p99_m': depth_error}
 
 
 def inspect_example(output):
@@ -101,12 +128,25 @@ def validate(output, blender):
             subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
         report["examples"][family] = inspect_example(output / family)
         print(f"PASS: {family}", flush=True)
-    command = [resolve_blender(blender), "-b", "--factory-startup", "--python-exit-code", "1",
-               "--python", str(ROOT / "tests/blender_scene_options.py"), "--", "--render-request",
-               str(output / "orthogonal/inputs/render_request.json")]
-    with (output / "scene_options.log").open("w") as log:
-        subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
+    for family in ('orthogonal', 'diamond'):
+        command = [resolve_blender(blender), "-b", "--factory-startup", "--python-exit-code", "1",
+                   "--python", str(ROOT / "tests/blender_scene_options.py"), "--", "--render-request",
+                   str(output / family / "inputs/render_request.json")]
+        with (output / f"{family}_scene_options.log").open("w") as log:
+            subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
     report["scene_options"] = "PASS"
+    report['gray_reconstruction'] = {}
+    for family in ('orthogonal', 'diamond'):
+        base = output / f'gray_{family}'
+        generate(cases[family], base / 'patterns', 48)
+        command = [sys.executable, str(ROOT / 'scripts/run_simulation.py'), '--config',
+                   str(base / 'patterns/scene.json'), '--output', str(base / 'render'),
+                   '--blender-bin', resolve_blender(blender)]
+        with (base / 'render.log').open('w') as log:
+            subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=True)
+        reconstruct(base / 'render', base / 'patterns/sequence.json', base / 'reconstruction')
+        report['gray_reconstruction'][family] = inspect_gray(base / 'render', base / 'reconstruction')
+        print(f'PASS: {family} Gray reconstruction', flush=True)
     write_json(output / "validation.json", report)
     print(json.dumps(report, indent=2))
 

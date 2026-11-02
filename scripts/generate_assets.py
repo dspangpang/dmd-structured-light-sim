@@ -1,6 +1,8 @@
 """Rebuild original demo meshes: blender -b --factory-startup --python scripts/generate_assets.py.
 
-Dimensions are in metres. Device optical origins are at zero and face local -Z.
+Dimensions are in metres. Device optical origins are at zero and face local -Z
+before OBJ export. The exported Y-up meshes face -Y: use rotation_deg [90, 0, 0]
+for their housing children in the scene configuration.
 The device bodies are schematic visualization meshes, not manufacturer CAD.
 """
 from pathlib import Path

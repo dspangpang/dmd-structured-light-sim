@@ -641,6 +641,8 @@ def _add_model_duplicates(
         bpy.context.scene.collection.objects.link(dup)
         dup.parent = parent_obj
         dup.location = (0.0, 0.0, 0.0)
+        # Absolute child rotation in raw mesh coordinates, replacing OBJ's
+        # import rotation. Bundled Y-up housings therefore require X90.
         dup.rotation_euler = rot
         if disable_render:
             dup.hide_render = True
