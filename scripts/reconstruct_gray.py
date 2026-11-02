@@ -15,7 +15,7 @@ from render_manifest import completed_render_manifest
 
 
 def decode(images, period, min_modulation=.02):
-    """Input is an ordered (4 + bits + 1, H, W) stack of intensities in [0, 1]."""
+    """Decode rectangular-image columns from ordered intensities in [0, 1]."""
     images = np.asarray(images, dtype=float)
     if images.ndim != 3 or len(images) < 6 or not np.isfinite(period) or period < 8:
         raise ValueError('Expected four sine frames, Gray bits, one complementary frame and period >= 8')
@@ -40,19 +40,22 @@ def decode(images, period, min_modulation=.02):
 
 
 def triangulate(u, valid, calibration, mapping):
-    """Intersect each camera ray with its decoded projector-column plane, in metres."""
+    """Ray/plane triangulation in metres; Diamond uses a linear row-average approximation."""
     camera_name = calibration['reference_camera']
     camera = calibration['devices'][camera_name]
     projector = calibration['devices'][calibration['camera_projectors'][camera_name]]
     kc, rc = np.asarray(camera['K']), np.asarray(camera['world_to_device'])
     rp = np.asarray(projector['world_to_device'])
     pp = np.asarray(projector['K']) @ rp
-    # Exported projector K uses carrier coordinates; Gray encodes native U.
+    # Exported K uses carrier coordinates; decoding returns rectangular columns.
     pn = np.asarray(mapping['carrier_to_native_homography']) @ pp
+    # True Diamond centres are U = 2*column + row parity. A single vertical
+    # sequence has no row code: this minimal linear baseline averages parity.
+    native_u = 2 * u + .5 if 'diamond_native_size_wh' in mapping else u
     yy, xx = np.indices(u.shape)
     rays = np.stack((xx, yy, np.ones_like(xx)), axis=-1) @ np.linalg.inv(kc).T @ rc[:, :3]
     center = -rc[:, :3].T @ rc[:, 3]
-    planes = pn[0] - u[..., None] * pn[2]
+    planes = pn[0] - native_u[..., None] * pn[2]
     denominator = np.sum(planes[..., :3] * rays, axis=-1)
     scale = np.linalg.norm(planes[..., :3], axis=-1) * np.linalg.norm(rays, axis=-1)
     with np.errstate(divide='ignore', invalid='ignore'):
@@ -61,7 +64,7 @@ def triangulate(u, valid, calibration, mapping):
         homogeneous = np.concatenate((xyz, np.ones((*u.shape, 1))), axis=-1)
         native = homogeneous @ pn.T
         native_uv = native[..., :2] / native[..., 2:]
-    width, height = mapping.get('diamond_native_size_wh', mapping['logical_dmd_size_wh'])
+    width, height = mapping['logical_dmd_size_wh']
     valid = valid & (np.abs(denominator) > 1e-6 * scale) & (distance > 0)
     valid &= (native[..., 2] > 0) & np.isfinite(xyz).all(axis=-1)
     valid &= (u >= 0) & (u < width) & (native_uv[..., 1] >= 0) & (native_uv[..., 1] < height)
@@ -74,17 +77,18 @@ def reconstruct(run, sequence_path, output):
     if output.exists():
         raise FileExistsError(f'Choose a new output directory: {output}')
     sequence = json.loads(Path(sequence_path).read_text())
-    if sequence['schema'] != 'dmd-sim.vertical-gray.v1':
-        raise ValueError('Use sequence.json from generate_gray.py')
+    if sequence['schema'] != 'dmd-sim.vertical-gray.v2':
+        raise ValueError('Regenerate rectangular patterns and sequence.json with generate_gray.py')
     receipt = json.loads((run / 'run.json').read_text())
     directory = (run / receipt['render_manifest']).parent
     complete, reason = completed_render_manifest(directory)
     if receipt['status'] != 'COMPLETE' or not complete:
         raise ValueError(f'Render is incomplete: {reason}')
     mapping = json.loads((run / 'inputs/dmd_mapping.json').read_text())
+    if 'diamond_native_size_wh' in mapping:
+        print('Diamond reconstruction: row-average linear approximation U = 2*logical_u + 0.5')
     preparation = json.loads((run / 'inputs/preparation_manifest.json').read_text())
-    if (preparation['dmd_type'] != sequence['dmd_type'] or
-            mapping['logical_dmd_size_wh'] != sequence['logical_size'] or
+    if (mapping['logical_dmd_size_wh'] != sequence['logical_size'] or
             [f['sha256'] for f in preparation['source_images']] != [f['sha256'] for f in sequence['files']]):
         raise ValueError('Sequence does not match this simulation')
     manifest = json.loads((directory / 'render_manifest.json').read_text())
@@ -106,7 +110,7 @@ def reconstruct(run, sequence_path, output):
         raise ValueError('No valid intersections; check illumination and camera/projector placement')
     u[~valid] = np.nan
     output.mkdir(parents=True)
-    np.savez_compressed(output / 'reconstruction.npz', native_u=u, xyz_world_m=xyz, valid=valid)
+    np.savez_compressed(output / 'reconstruction.npz', logical_u=u, xyz_world_m=xyz, valid=valid)
     points = xyz[valid]
     header = (f'ply\nformat ascii 1.0\nelement vertex {len(points)}\n'
               'property float x\nproperty float y\nproperty float z\nend_header')

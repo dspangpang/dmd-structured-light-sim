@@ -104,8 +104,10 @@ are defined by `position_m`, `look_at_m` and `up`.
 ## Minimal vertical Gray-code reconstruction
 
 Two Python scripts demonstrate four-step phase shifting, Gray-coded fringe orders
-and one complementary code frame. Only vertical fringes are supported. The number
-of Gray bits follows the resolution and period automatically.
+and one complementary code frame. Only vertical fringes are supported. Patterns
+are designed on ordinary rectangular image columns. The number of Gray bits
+follows the image width and period; both layouts use identical source images
+when those dimensions and the period match.
 
 ```bash
 # 1. Generate patterns, frame order and a scene configuration
@@ -117,12 +119,18 @@ python scripts/reconstruct_gray.py --run output/gray-render --sequence output/gr
 ```
 
 Use `examples/diamond/scene.json` in step 1 for Diamond-DMD; choose new output
-directories for each run. Here `--period` must be at least 8 and uses native horizontal
-coordinate `U`: the column index for orthogonal arrays, or
-`U = 2 * column + row parity` for Diamond arrays, where adjacent logical columns
-are two units apart. The decoder uses `calibration.json` and `dmd_mapping.json`
-to intersect camera rays with decoded projector-column planes. It writes
-`points.ply` and `reconstruction.npz` (native `U`, world XYZ and a valid mask), in metres.
+directories for each run. `--period` must be at least 8 and is always measured in
+columns of the original rectangular image. Simulation preparation saves the source
+images in `inputs/logical/`, then produces `inputs/projector/`: orthogonal uses
+the original image, while Diamond maps its pixels onto the staggered carrier.
+The generator does not shift alternate rows or change the period for Diamond.
+Decoding recovers the original image column `logical_u`; reconstruction then uses
+`calibration.json` and `dmd_mapping.json`. To keep this example simple, Diamond
+reconstruction uses the row-average linear approximation `U ≈ 2 * logical_u + 0.5`,
+which retains approximation error from staggered sampling. Outputs are
+`points.ply` and `reconstruction.npz` (`logical_u`, world XYZ and a valid mask),
+with 3-D coordinates in metres. Older sequences encode a different coordinate system;
+regenerate patterns and renders before reconstructing with this version.
 Depth and point clouds exported directly by the renderer are ground truth for comparison.
 Run this sequence in batch mode; the `--interactive` demo uses the four sine frames above.
 

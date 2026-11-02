@@ -15,15 +15,12 @@ sys.path.insert(0, str(ROOT / "src"))
 from dmd_setup import sha256, validate_config, write_json
 
 
-def make_patterns(width, height, period, diamond=False):
-    """Gray encodes fringe order; sine encodes position within each period."""
+def make_patterns(width, height, period):
+    """Design ordinary rectangular images, independently of the DMD layout."""
     if width < 2 or height < 2 or not math.isfinite(period) or period < 8:
         raise ValueError("Width/height must be >= 2 and period must be finite and >= 8")
-    yy, xx = np.indices((height, width))
-    # Vertical means native physical U: odd Diamond rows have a one-unit offset.
-    u = 2 * xx + (yy & 1) if diamond else xx
-    span = 2 * width if diamond else width
-    bits = max(1, (math.ceil(span / period) - 1).bit_length())
+    u = np.broadcast_to(np.arange(width), (height, width))
+    bits = max(1, (math.ceil(width / period) - 1).bit_length())
     phase = 2 * np.pi * u / period
     images = [np.rint(127.5 + 100 * np.sin(phase + k * np.pi / 2)).astype(np.uint8)
               for k in range(4)]
@@ -40,8 +37,7 @@ def generate(config_path, output, period):
     config_path, output = Path(config_path).resolve(), Path(output).resolve()
     config = copy.deepcopy(validate_config(json.loads(config_path.read_text())))
     width, height = config['projector']['resolution']
-    kind = config['projector']['type']
-    images, bits = make_patterns(width, height, period, kind == 'diamond')
+    images, bits = make_patterns(width, height, period)
     # Keep assets valid when the generated scene JSON moves to another directory.
     if 'asset' in config['target']:
         config['target']['asset'] = str((config_path.parent / config['target']['asset']).resolve())
@@ -56,7 +52,7 @@ def generate(config_path, output, period):
         Image.fromarray(image).save(output / name)
     write_json(output / 'scene.json', config)
     write_json(output / 'sequence.json', {
-        'schema': 'dmd-sim.vertical-gray.v1', 'dmd_type': kind,
+        'schema': 'dmd-sim.vertical-gray.v2',
         'logical_size': [width, height], 'period': period, 'gray_bits': bits,
         'files': [{'name': name, 'sha256': sha256(output / name)} for name in names],
     })
@@ -67,6 +63,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True, help='New directory')
-    parser.add_argument('--period', type=float, default=48, help='Period in native U units (>= 8)')
+    parser.add_argument('--period', type=float, default=48, help='Period in rectangular image columns (>= 8)')
     args = parser.parse_args()
     generate(args.config, args.output, args.period)

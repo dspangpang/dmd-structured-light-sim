@@ -91,7 +91,8 @@ Diamond 的载体尺寸不是硬件上传尺寸，导出的投影仪内参对应
 ## 最小竖条纹 Gray 码与三维重建
 
 两个 Python 脚本提供“四步相移 + Gray 级次码 + 一张互补码”的最小示例，
-只支持竖条纹。Gray 位数由分辨率和周期自动确定。
+只支持竖条纹。生成器统一按普通矩形图片的列号设计图案，Gray 位数由图片宽度和周期
+自动确定；相同尺寸和周期下，两种 DMD 使用完全相同的原始图片。
 
 ```bash
 # 1. 生成条纹、帧顺序和场景配置
@@ -103,10 +104,14 @@ python scripts/reconstruct_gray.py --run output/gray-render --sequence output/gr
 ```
 
 第一步改用 `examples/diamond/scene.json` 即可运行 Diamond-DMD；每次使用新输出目录。
-这里 `--period` 至少为 8，以原生水平坐标 `U` 为单位：正交阵列为列号，
-Diamond 为 `U = 2 × 列号 + 行号奇偶性`，相邻逻辑列相隔 2 个单位。
-解码后结合 `calibration.json` 和 `dmd_mapping.json`，求相机射线与投影条纹平面的交点。
-输出 `points.ply` 和 `reconstruction.npz`（原生 `U`、世界坐标 XYZ、有效掩膜），长度单位为米。
+`--period` 至少为 8，单位统一为原始矩形图片的列像素。
+仿真准备阶段将原图保存在 `inputs/logical/`，再根据 DMD 类型生成 `inputs/projector/`：
+正交直接使用原图，Diamond 将像素映射到错列阵列载体；生成器不预先移动奇偶行或改变周期。
+解码得到原图列坐标 `logical_u`，重建再读取 `calibration.json` 和 `dmd_mapping.json`。
+为保持示例简单，Diamond 重建使用行偏移平均后的线性近似 `U ≈ 2 × logical_u + 0.5`，
+会保留错列采样带来的近似误差。输出 `points.ply` 和 `reconstruction.npz`
+（`logical_u`、世界坐标 XYZ、有效掩膜），三维坐标单位为米。
+旧版生成器的坐标含义不同，使用本版重建前请重新生成条纹并渲染。
 渲染目录中直接导出的深度和点云属于真值，可用于对照重建结果。
 该序列通过批量渲染运行；`--interactive` 演示仍使用前面的四张正弦条纹。
 

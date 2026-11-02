@@ -1,32 +1,53 @@
 """Check Gray unwrapping and ray/plane triangulation independently of Blender."""
 from pathlib import Path
+import json
 import sys
+import tempfile
 import unittest
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
-from generate_gray import make_patterns
-from reconstruct_gray import decode, triangulate
+from generate_gray import generate, make_patterns
+from reconstruct_gray import decode, reconstruct, triangulate
 from dmd_diamond import build_carrier_mapping_contract
+from dmd_setup import prepare
 
 
 class GrayExampleTests(unittest.TestCase):
     def test_generated_codes_recover_every_column_including_wraps(self):
-        for diamond in (False, True):
-            for size, period in (((641, 31), 48), ((33, 21), 12.5), ((7, 5), 48)):
-                with self.subTest(diamond=diamond, size=size, period=period):
-                    frames, bits = make_patterns(*size, period, diamond)
-                    images = np.asarray(frames) / 255
-                    # Reflectance gain and ambient offset vary over the image.
-                    yy, xx = np.indices(size[::-1])
-                    images = images * (.2 + .5 * xx / size[0]) + .03
-                    u, valid = decode(images, period)
-                    truth = 2 * xx + (yy & 1) if diamond else xx
-                    self.assertEqual(len(frames), bits + 5)
-                    self.assertTrue(valid.all())
-                    np.testing.assert_allclose(u, truth, atol=.05, rtol=0)
+        for size, period in (((641, 31), 48), ((33, 21), 12.5), ((7, 5), 48)):
+            with self.subTest(size=size, period=period):
+                frames, bits = make_patterns(*size, period)
+                for image in frames:
+                    np.testing.assert_array_equal(image, np.broadcast_to(image[0], image.shape))
+                images = np.asarray(frames) / 255
+                # Reflectance gain and ambient offset vary over the image.
+                _, xx = np.indices(size[::-1])
+                images = images * (.2 + .5 * xx / size[0]) + .03
+                u, valid = decode(images, period)
+                self.assertEqual(len(frames), bits + 5)
+                self.assertTrue(valid.all())
+                np.testing.assert_allclose(u, xx, atol=.05, rtol=0)
+
+    def test_same_patterns_for_both_layouts_and_mapping_only_during_preparation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sequences, manifests = [], []
+            for family in ('orthogonal', 'diamond'):
+                output = root / family
+                generate(ROOT / 'examples' / family / 'scene.json', output, 48)
+                sequence = json.loads((output / 'sequence.json').read_text())
+                sequences.append(sequence)
+                prepare(output / 'scene.json', output / 'render')
+                manifests.append(json.loads((output / 'render/inputs/preparation_manifest.json').read_text()))
+            self.assertEqual(sequences[0], sequences[1])
+            self.assertEqual(len(sequences[0]['files']), 9)
+            for a, b in zip(manifests[0]['frames'], manifests[1]['frames']):
+                self.assertEqual(a['logical_sha256'], b['logical_sha256'])
+                self.assertEqual(a['logical_sha256'], a['projector_sha256'])
+                self.assertNotEqual(b['logical_sha256'], b['projector_sha256'])
 
     def test_dark_constant_and_ambiguous_gray_are_rejected(self):
         frames, _ = make_patterns(64, 8, 16)
@@ -37,6 +58,14 @@ class GrayExampleTests(unittest.TestCase):
         _, valid = decode(images, 16)
         self.assertFalse(valid[:, :3].any())
         self.assertTrue(valid[:, 3:].all())
+
+    def test_previous_native_coordinate_sequences_require_regeneration(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sequence = root / 'sequence.json'
+            sequence.write_text(json.dumps({'schema': 'dmd-sim.vertical-gray.v1'}))
+            with self.assertRaisesRegex(ValueError, 'Regenerate rectangular patterns'):
+                reconstruct(root / 'old-render', sequence, root / 'new-reconstruction')
 
     def fixture(self, diamond=False, coincident=False):
         mapping = build_carrier_mapping_contract(logical_size=(64, 48)) if diamond else {
@@ -59,9 +88,11 @@ class GrayExampleTests(unittest.TestCase):
         truth = center + 1.1 * np.stack(((xx-15.5)/32, (yy-11.5)/32, np.ones_like(xx)), axis=-1)
         points = np.concatenate((truth, np.ones((24, 32, 1))), axis=-1)
         projected = points @ (np.asarray(mapping['carrier_to_native_homography']) @ kp @ rp).T
-        return projected[..., 0] / projected[..., 2], truth, calibration, mapping
+        native_u = projected[..., 0] / projected[..., 2]
+        logical_u = (native_u - .5) / 2 if diamond else native_u
+        return logical_u, truth, calibration, mapping
 
-    def test_plane_reconstruction_in_world_metres_for_both_coordinate_domains(self):
+    def test_plane_reconstruction_under_the_linear_coordinate_model(self):
         for diamond in (False, True):
             u, truth, calibration, mapping = self.fixture(diamond)
             xyz, valid = triangulate(u, np.ones(u.shape, bool), calibration, mapping)
