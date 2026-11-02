@@ -128,7 +128,10 @@ Both DMD layouts use standard FPP: four-step wrapped phase, Gray-code fringe ord
 conversion to the input image column `logical_u` using the period, then triangulation.
 `calibration.json` and `dmd_mapping.json` express projector parameters in the input
 image coordinate system. Reconstruction adds no row-parity, mean-row or lookup-table
-compensation. Outputs are
+compensation. Results are unfiltered: there is no modulation, Gray-code confidence,
+depth or projector-bounds selection, smoothing or outlier removal. The valid mask
+only marks undefined phase, degenerate geometry or non-finite values. Any result
+filtering is left to the user after reconstruction. Outputs are
 `points.ply` and `reconstruction.npz` (`logical_u`, world XYZ and a valid mask),
 with 3-D coordinates in metres. Older sequences encode a different coordinate system;
 regenerate patterns and renders before reconstructing with this version.

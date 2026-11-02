@@ -49,15 +49,28 @@ class GrayExampleTests(unittest.TestCase):
                 self.assertEqual(a['logical_sha256'], a['projector_sha256'])
                 self.assertNotEqual(b['logical_sha256'], b['projector_sha256'])
 
-    def test_dark_constant_and_ambiguous_gray_are_rejected(self):
+    def test_only_undefined_or_nonfinite_phase_is_rejected(self):
         frames, _ = make_patterns(64, 8, 16)
         images = np.asarray(frames) / 255
         images[:, :, 0] = 0
         images[:, :, 1] = .8
-        images[4, :, 2] = images[:4, :, 2].mean(axis=0)
-        _, valid = decode(images, 16)
+        images[4, :, 2] = np.nan
+        u, valid = decode(images, 16)
         self.assertFalse(valid[:, :3].any())
+        self.assertTrue(np.isnan(u[:, :3]).all())
         self.assertTrue(valid[:, 3:].all())
+
+    def test_low_modulation_and_ambiguous_gray_are_not_filtered(self):
+        frames, _ = make_patterns(64, 8, 16)
+        images = np.asarray(frames) / 255 * 1e-6 + .3
+        _, xx = np.indices(images.shape[1:])
+        u, valid = decode(images, 16)
+        self.assertTrue(valid.all())
+        np.testing.assert_allclose(u, xx, atol=.05, rtol=0)
+        images[4, :, 2] = images[:4, :, 2].mean(axis=0)
+        u, valid = decode(images, 16)
+        self.assertTrue(valid.all())
+        self.assertTrue(np.isfinite(u).all())
 
     def test_previous_native_coordinate_sequences_require_regeneration(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -96,8 +109,32 @@ class GrayExampleTests(unittest.TestCase):
         for diamond in (False, True):
             u, truth, calibration, mapping = self.fixture(diamond)
             xyz, valid = triangulate(u, np.ones(u.shape, bool), calibration, mapping)
-            self.assertGreater(valid.sum(), 600)
+            self.assertTrue(valid.all())
             np.testing.assert_allclose(xyz[valid], truth[valid], atol=1e-12)
+
+    def test_out_of_bounds_and_negative_depth_results_are_retained(self):
+        for diamond in (False, True):
+            u, _, calibration, mapping = self.fixture(diamond)
+            u += 100
+            xyz, valid = triangulate(u, np.ones(u.shape, bool), calibration, mapping)
+            self.assertTrue(valid.all())
+            self.assertTrue((u >= mapping['logical_dmd_size_wh'][0]).all())
+            rc = calibration['devices']['camera']['world_to_device']
+            self.assertTrue(((xyz @ rc[:, :3].T + rc[:, 3])[..., 2] < 0).all())
+
+    def test_distant_finite_intersections_are_retained(self):
+        for diamond in (False, True):
+            _, truth, calibration, mapping = self.fixture(diamond)
+            rc = calibration['devices']['camera']['world_to_device']
+            center = -rc[:, :3].T @ rc[:, 3]
+            truth = center + (truth - center) * 1e7
+            projector = calibration['devices']['projector']
+            pp = np.asarray(mapping['carrier_to_native_homography']) @ projector['K'] @ projector['world_to_device']
+            projected = np.concatenate((truth, np.ones((*truth.shape[:2], 1))), axis=-1) @ pp.T
+            u = projected[..., 0] / projected[..., 2] / (2 if diamond else 1)
+            xyz, valid = triangulate(u, np.ones(u.shape, bool), calibration, mapping)
+            self.assertTrue(valid.all())
+            np.testing.assert_allclose(xyz, truth, rtol=1e-6, atol=1e-6)
 
     def test_coincident_devices_cannot_triangulate(self):
         u, _, calibration, mapping = self.fixture(coincident=True)

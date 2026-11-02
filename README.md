@@ -110,6 +110,9 @@ python scripts/reconstruct_gray.py --run output/gray-render --sequence output/gr
 两种 DMD 共用标准 FPP 流程：四步相移求包裹相位，Gray 码确定级次，再按周期换算为
 原图列坐标 `logical_u`，最后进行三角测量。`calibration.json` 和 `dmd_mapping.json`
 用于将投影参数统一到原图坐标系；重建不增加奇偶行、行偏移平均或查找表补偿。
+代码直接输出未滤波的重建结果，不按调制度、Gray 码置信度、深度或投影范围筛点，
+也不做平滑或离群点剔除。有效掩膜只标记相位未定义、几何退化或非有限数值；
+结果滤波由使用者在重建后自行处理。
 输出 `points.ply` 和 `reconstruction.npz`
 （`logical_u`、世界坐标 XYZ、有效掩膜），三维坐标单位为米。
 旧版生成器的坐标含义不同，使用本版重建前请重新生成条纹并渲染。

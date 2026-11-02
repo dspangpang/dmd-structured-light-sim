@@ -14,14 +14,13 @@ from calibration_io import read_calibration
 from render_manifest import completed_render_manifest
 
 
-def decode(images, period, min_modulation=.02):
-    """Decode rectangular-image columns from ordered intensities in [0, 1]."""
+def decode(images, period):
+    """Decode rectangular-image columns without confidence or modulation filtering."""
     images = np.asarray(images, dtype=float)
     if images.ndim != 3 or len(images) < 6 or not np.isfinite(period) or period < 8:
         raise ValueError('Expected four sine frames, Gray bits, one complementary frame and period >= 8')
     sine, cosine = images[0] - images[2], images[1] - images[3]
     phase = np.mod(np.arctan2(sine, cosine), 2 * np.pi)
-    amplitude = np.hypot(sine, cosine) / 2
     threshold = images[:4].mean(axis=0)
     gray = images[4:] > threshold
     # Gray-to-binary: cumulative XOR from most significant to least significant.
@@ -34,8 +33,9 @@ def decode(images, period, min_modulation=.02):
     order = np.where(phase <= np.pi / 2, shifted_order,
                      np.where(phase >= 3 * np.pi / 2, shifted_order - 1, order))
     u = period * (order + phase / (2 * np.pi))
-    valid = np.isfinite(images).all(axis=0) & (amplitude > min_modulation)
-    valid &= (np.abs(images[4:] - threshold).min(axis=0) > .1 * amplitude)
+    # atan2(0, 0) has no defined phase; every other finite signal is retained.
+    valid = np.isfinite(images).all(axis=0) & ((sine != 0) | (cosine != 0))
+    u[~valid] = np.nan
     return u, valid
 
 
@@ -62,12 +62,9 @@ def triangulate(u, valid, calibration, mapping):
     with np.errstate(divide='ignore', invalid='ignore'):
         distance = -(planes[..., :3] @ center + planes[..., 3]) / denominator
         xyz = center + distance[..., None] * rays
-        homogeneous = np.concatenate((xyz, np.ones((*u.shape, 1))), axis=-1)
-        projected = homogeneous @ pp.T
-        projector_uv = projected[..., :2] / projected[..., 2:]
-    valid = valid & (np.abs(denominator) > 1e-6 * scale) & (distance > 0)
-    valid &= (projected[..., 2] > 0) & np.isfinite(xyz).all(axis=-1)
-    valid &= (u >= 0) & (u < width) & (projector_uv[..., 1] >= 0) & (projector_uv[..., 1] < height)
+    # Only reject parallel ray/plane intersections at floating-point precision.
+    valid = valid & (np.abs(denominator) > 8 * np.finfo(float).eps * scale)
+    valid &= np.isfinite(xyz).all(axis=-1)
     xyz[~valid] = np.nan
     return xyz, valid
 
@@ -106,7 +103,6 @@ def reconstruct(run, sequence_path, output):
     xyz, valid = triangulate(u, valid, calibration, mapping)
     if not valid.any():
         raise ValueError('No valid intersections; check illumination and camera/projector placement')
-    u[~valid] = np.nan
     output.mkdir(parents=True)
     np.savez_compressed(output / 'reconstruction.npz', logical_u=u, xyz_world_m=xyz, valid=valid)
     points = xyz[valid]
