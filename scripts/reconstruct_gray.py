@@ -40,34 +40,34 @@ def decode(images, period, min_modulation=.02):
 
 
 def triangulate(u, valid, calibration, mapping):
-    """Ray/plane triangulation in metres; Diamond uses a linear row-average approximation."""
+    """Standard FPP ray/column-plane triangulation, with all pixels in the input-image domain."""
     camera_name = calibration['reference_camera']
     camera = calibration['devices'][camera_name]
     projector = calibration['devices'][calibration['camera_projectors'][camera_name]]
     kc, rc = np.asarray(camera['K']), np.asarray(camera['world_to_device'])
     rp = np.asarray(projector['world_to_device'])
-    pp = np.asarray(projector['K']) @ rp
-    # Exported K uses carrier coordinates; decoding returns rectangular columns.
-    pn = np.asarray(mapping['carrier_to_native_homography']) @ pp
-    # True Diamond centres are U = 2*column + row parity. A single vertical
-    # sequence has no row code: this minimal linear baseline averages parity.
-    native_u = 2 * u + .5 if 'diamond_native_size_wh' in mapping else u
+    width, height = mapping['logical_dmd_size_wh']
+    native_width, native_height = mapping.get('diamond_native_size_wh', (width, height))
+    # Express the exported projector matrix in input-image pixel units.
+    # This is a coordinate conversion, with no row-dependent or mean-row correction.
+    to_input = np.diag([width / native_width, height / native_height, 1.])
+    to_input = to_input @ np.asarray(mapping['carrier_to_native_homography'])
+    pp = to_input @ np.asarray(projector['K']) @ rp
     yy, xx = np.indices(u.shape)
     rays = np.stack((xx, yy, np.ones_like(xx)), axis=-1) @ np.linalg.inv(kc).T @ rc[:, :3]
     center = -rc[:, :3].T @ rc[:, 3]
-    planes = pn[0] - native_u[..., None] * pn[2]
+    planes = pp[0] - u[..., None] * pp[2]
     denominator = np.sum(planes[..., :3] * rays, axis=-1)
     scale = np.linalg.norm(planes[..., :3], axis=-1) * np.linalg.norm(rays, axis=-1)
     with np.errstate(divide='ignore', invalid='ignore'):
         distance = -(planes[..., :3] @ center + planes[..., 3]) / denominator
         xyz = center + distance[..., None] * rays
         homogeneous = np.concatenate((xyz, np.ones((*u.shape, 1))), axis=-1)
-        native = homogeneous @ pn.T
-        native_uv = native[..., :2] / native[..., 2:]
-    width, height = mapping['logical_dmd_size_wh']
+        projected = homogeneous @ pp.T
+        projector_uv = projected[..., :2] / projected[..., 2:]
     valid = valid & (np.abs(denominator) > 1e-6 * scale) & (distance > 0)
-    valid &= (native[..., 2] > 0) & np.isfinite(xyz).all(axis=-1)
-    valid &= (u >= 0) & (u < width) & (native_uv[..., 1] >= 0) & (native_uv[..., 1] < height)
+    valid &= (projected[..., 2] > 0) & np.isfinite(xyz).all(axis=-1)
+    valid &= (u >= 0) & (u < width) & (projector_uv[..., 1] >= 0) & (projector_uv[..., 1] < height)
     xyz[~valid] = np.nan
     return xyz, valid
 
@@ -85,8 +85,6 @@ def reconstruct(run, sequence_path, output):
     if receipt['status'] != 'COMPLETE' or not complete:
         raise ValueError(f'Render is incomplete: {reason}')
     mapping = json.loads((run / 'inputs/dmd_mapping.json').read_text())
-    if 'diamond_native_size_wh' in mapping:
-        print('Diamond reconstruction: row-average linear approximation U = 2*logical_u + 0.5')
     preparation = json.loads((run / 'inputs/preparation_manifest.json').read_text())
     if (mapping['logical_dmd_size_wh'] != sequence['logical_size'] or
             [f['sha256'] for f in preparation['source_images']] != [f['sha256'] for f in sequence['files']]):

@@ -124,10 +124,11 @@ columns of the original rectangular image. Simulation preparation saves the sour
 images in `inputs/logical/`, then produces `inputs/projector/`: orthogonal uses
 the original image, while Diamond maps its pixels onto the staggered carrier.
 The generator does not shift alternate rows or change the period for Diamond.
-Decoding recovers the original image column `logical_u`; reconstruction then uses
-`calibration.json` and `dmd_mapping.json`. To keep this example simple, Diamond
-reconstruction uses the row-average linear approximation `U ≈ 2 * logical_u + 0.5`,
-which retains approximation error from staggered sampling. Outputs are
+Both DMD layouts use standard FPP: four-step wrapped phase, Gray-code fringe orders,
+conversion to the input image column `logical_u` using the period, then triangulation.
+`calibration.json` and `dmd_mapping.json` express projector parameters in the input
+image coordinate system. Reconstruction adds no row-parity, mean-row or lookup-table
+compensation. Outputs are
 `points.ply` and `reconstruction.npz` (`logical_u`, world XYZ and a valid mask),
 with 3-D coordinates in metres. Older sequences encode a different coordinate system;
 regenerate patterns and renders before reconstructing with this version.

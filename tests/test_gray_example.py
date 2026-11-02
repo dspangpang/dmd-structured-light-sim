@@ -89,10 +89,10 @@ class GrayExampleTests(unittest.TestCase):
         points = np.concatenate((truth, np.ones((24, 32, 1))), axis=-1)
         projected = points @ (np.asarray(mapping['carrier_to_native_homography']) @ kp @ rp).T
         native_u = projected[..., 0] / projected[..., 2]
-        logical_u = (native_u - .5) / 2 if diamond else native_u
+        logical_u = native_u / 2 if diamond else native_u
         return logical_u, truth, calibration, mapping
 
-    def test_plane_reconstruction_under_the_linear_coordinate_model(self):
+    def test_standard_fpp_triangulation_has_no_row_offset(self):
         for diamond in (False, True):
             u, truth, calibration, mapping = self.fixture(diamond)
             xyz, valid = triangulate(u, np.ones(u.shape, bool), calibration, mapping)

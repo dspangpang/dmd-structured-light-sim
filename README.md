@@ -107,9 +107,10 @@ python scripts/reconstruct_gray.py --run output/gray-render --sequence output/gr
 `--period` 至少为 8，单位统一为原始矩形图片的列像素。
 仿真准备阶段将原图保存在 `inputs/logical/`，再根据 DMD 类型生成 `inputs/projector/`：
 正交直接使用原图，Diamond 将像素映射到错列阵列载体；生成器不预先移动奇偶行或改变周期。
-解码得到原图列坐标 `logical_u`，重建再读取 `calibration.json` 和 `dmd_mapping.json`。
-为保持示例简单，Diamond 重建使用行偏移平均后的线性近似 `U ≈ 2 × logical_u + 0.5`，
-会保留错列采样带来的近似误差。输出 `points.ply` 和 `reconstruction.npz`
+两种 DMD 共用标准 FPP 流程：四步相移求包裹相位，Gray 码确定级次，再按周期换算为
+原图列坐标 `logical_u`，最后进行三角测量。`calibration.json` 和 `dmd_mapping.json`
+用于将投影参数统一到原图坐标系；重建不增加奇偶行、行偏移平均或查找表补偿。
+输出 `points.ply` 和 `reconstruction.npz`
 （`logical_u`、世界坐标 XYZ、有效掩膜），三维坐标单位为米。
 旧版生成器的坐标含义不同，使用本版重建前请重新生成条纹并渲染。
 渲染目录中直接导出的深度和点云属于真值，可用于对照重建结果。

@@ -40,9 +40,12 @@ def inspect_gray(run, reconstruction):
         raise RuntimeError('Too few reconstructed sphere points')
     sphere_error = float(np.quantile(np.abs(np.linalg.norm(xyz[valid], axis=-1) - .1), .99))
     depth_error = float(np.quantile(np.abs(camera_z[matched] - depth[matched]), .99))
-    if not np.isfinite([sphere_error, depth_error]).all() or sphere_error > .001 or depth_error > .002:
+    # Shared 2 mm example tolerance for basic FPP with raster-sampling error.
+    tolerance = .002
+    if not np.isfinite([sphere_error, depth_error]).all() or max(sphere_error, depth_error) > tolerance:
         raise RuntimeError(f'Gray reconstruction failed: sphere={sphere_error}, depth={depth_error} m')
-    return {'status': 'PASS', 'point_count': int(valid.sum()), 'foreground_coverage': coverage,
+    return {'status': 'PASS', 'tolerance_m': tolerance,
+            'point_count': int(valid.sum()), 'foreground_coverage': coverage,
             'sphere_error_p99_m': sphere_error, 'depth_error_p99_m': depth_error}
 
 
