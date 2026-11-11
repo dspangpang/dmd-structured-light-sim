@@ -76,6 +76,10 @@ def _render_config_snapshot(cfg):
             snapshot[key] = repr(value)
         else:
             snapshot[key] = value
+    from projector_psf import parse_settings, implementation_sha256
+    if getattr(cfg, "PROJECTOR_PSF", None) is not None:
+        snapshot["PROJECTOR_PSF"] = parse_settings(cfg.PROJECTOR_PSF)
+        snapshot["PROJECTOR_PSF_IMPLEMENTATION_SHA256"] = implementation_sha256()
     return snapshot
 
 
@@ -314,6 +318,15 @@ class RenderRun:
             "camera_file_count": len(artifacts),
             "expected_minimum": int(expected_minimum),
         }
+        extra_artifacts = dict(extra_artifacts or {})
+        if getattr(self.cfg, "PROJECTOR_PSF", None) is not None and status in {"COMPLETE", "VALIDATED"}:
+            receipt = self.output_dir / "projector_psf_updates.jsonl"
+            if not receipt.is_file() or not receipt.stat().st_size:
+                raise RuntimeError("Projector PSF acquisition has no effective-state update receipt")
+            records = list(extra_artifacts.get("projector_psf", []))
+            if not any(record.get("path") == receipt.name for record in records):
+                records.append({"path": receipt.name, "kind": "effective_projector_emission_psf_updates"})
+            extra_artifacts["projector_psf"] = records
         artifact_groups.update(self._extra_artifacts(extra_artifacts))
         parameter_records = []
         for name in ("calibration.json", "params.txt"):

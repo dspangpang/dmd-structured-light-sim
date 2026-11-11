@@ -65,7 +65,14 @@
     "projector_energy": 4.0,
     "projector_texture_interpolation": "Closest",
     "bounce_level": "off",
-    "save_float_exr": true
+    "save_float_exr": true,
+    "projector_psf": {
+      "model": "gaussian",
+      "sigma_px": 1.0,
+      "subsamples_per_pixel": 32,
+      "boundary": "constant",
+      "sigma_unit": "source_pixel"
+    }
   },
   "capture": {
     "projector_image_format": "PNG",

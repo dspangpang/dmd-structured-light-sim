@@ -1,5 +1,7 @@
 # DMD Structured-Light Simulator
 
+The shared projector forward model defaults to a continuous Gaussian PSF with sigma=1 source/carrier pixel and 32 numerical samples per pixel. Configure `render.projector_psf`; use `sigma_px: 0` for a sharp control. The PSF acts before projector Emission and surface reflection. Camera blur remains independent. Both batch captures and packed interactive phase sequences use this model. See [the shared configuration](PROJECTOR_PSF.md).
+
 [简体中文](README.md) | **English**
 
 A Blender/Cycles structured-light simulator with one camera and one projector,

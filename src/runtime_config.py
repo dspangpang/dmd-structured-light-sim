@@ -1,4 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from projector_psf import parse_settings
 
 
 @dataclass
@@ -66,7 +68,10 @@ class RuntimeConfig:
     # Fixed basis adapter for the vendored Projectors add-on.
     PROJECTOR_TEXTURE_MIRROR_X: bool = True
     PROJECTOR_TEXTURE_MIRROR_Y: bool = True
-    PROJECTOR_TEXTURE_INTERPOLATION: str = "Linear"
+    PROJECTOR_TEXTURE_INTERPOLATION: str = "Closest"
+    # Shared forward model: source pixel cells -> optical PSF -> Emission.
+    # Explicit sigma_px=0 selects the sharp control.
+    PROJECTOR_PSF: dict = field(default_factory=parse_settings)
     USE_PROJECTOR_MODEL: bool = False
     PROJECTOR_MODEL_PATH: str = "//assets/models/projector.obj"
     PROJECTOR_MODEL_SCALE: float = 1.0

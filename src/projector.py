@@ -2,6 +2,7 @@ import bpy
 import os
 import math
 import sys
+import json
 from pathlib import Path
 
 SIM_TAG_KEY = "sim_tag"
@@ -204,14 +205,17 @@ def validate_projector_projection_state(
             f"{expected_size[0]}x{expected_size[1]}"
         )
 
+    from projector_psf import SETTINGS_KEY, validate_effective_psf
+    psf_state = validate_effective_psf(dlp_obj) if dlp_obj.get(SETTINGS_KEY) else None
+    effective_node = root_tree.nodes[psf_state["effective_source"]] if psf_state else image_node
     emission_links = list(emission_node.inputs["Color"].links)
     if (
         len(emission_links) != 1
-        or emission_links[0].from_node != image_node
-        or emission_links[0].from_socket != image_node.outputs["Color"]
+        or emission_links[0].from_node != effective_node
+        or emission_links[0].from_socket != effective_node.outputs["Color"]
     ):
         raise RuntimeError(
-            "[projector] Image Texture is not the effective Emission color source"
+            "[projector] Requested projector field is not the effective Emission color source"
         )
 
     expected_output_node = (
@@ -276,17 +280,20 @@ def validate_projector_projection_state(
         "texture_mode": "custom_image",
         "pixel_grid_enabled": bool(pixel_grid_enabled),
         "mapping_scale_xy": list(actual_scale),
+        "projector_psf": psf_state,
     }
 
 
-def _load_projector_image(image_path):
+def _load_projector_image(image_path, *, immutable=False):
     if not os.path.isfile(image_path):
         raise FileNotFoundError(f"Projector image not found: {image_path}")
     try:
-        img = bpy.data.images.load(filepath=image_path, check_existing=True)
+        img = bpy.data.images.load(filepath=image_path, check_existing=not immutable)
     except Exception as exc:
         raise RuntimeError(f"Failed to load projector image: {image_path}") from exc
     img.colorspace_settings.name = "Non-Color"
+    if immutable:
+        img["projector_psf_native_source"] = True
     return img
 
 
@@ -451,7 +458,8 @@ def add_projector(cfg):
     _set_projector_energy(dlp, cfg.PROJECTOR_ENERGY)
 
     img_path = _resolve_repo_path(cfg.PROJECTOR_IMAGE)
-    img = _load_projector_image(img_path)
+    psf_settings = getattr(cfg, "PROJECTOR_PSF", None)
+    img = _load_projector_image(img_path, immutable=psf_settings is not None)
     expected_res_x = int(cfg.PROJECTOR_RES_X)
     expected_res_y = int(cfg.PROJECTOR_RES_Y)
     _validate_projector_image_resolution(img, expected_res_x, expected_res_y)
@@ -470,6 +478,9 @@ def add_projector(cfg):
     _set_projector_texture_mirror(dlp, texture_mirror_x, texture_mirror_y)
     _set_projector_texture_interpolation(dlp, texture_interpolation)
     _set_projector_energy(dlp, cfg.PROJECTOR_ENERGY)
+    if psf_settings is not None:
+        from projector_psf import apply_projector_psf
+        apply_projector_psf(dlp, psf_settings)
     validate_projector_projection_state(dlp, img_path)
     return dlp
 
@@ -481,9 +492,16 @@ def update_projector_image(dlp_obj, image_path):
     if not os.path.isfile(image_path):
         raise FileNotFoundError(f"[Projector] Image file not found: {image_path}")
 
-    # Load image
+    from projector_psf import SETTINGS_KEY, apply_projector_psf, retire_source_image
+    settings = json.loads(dlp_obj[SETTINGS_KEY]) if dlp_obj.get(SETTINGS_KEY) else None
+    current_spot = _find_projector_spot(dlp_obj)
+    if current_spot is None or not current_spot.data or not current_spot.data.node_tree:
+        raise RuntimeError("[Projector] Spot light not found for image update")
+    old_image = current_spot.data.node_tree.nodes["Image Texture"].image
+    # Load a fresh immutable source when PSF is active, even if the pathname
+    # was reused for different bytes. Other projector workflows retain caching.
     try:
-        img = _load_projector_image(image_path)
+        img = _load_projector_image(image_path, immutable=settings is not None)
     except Exception as e:
         raise RuntimeError(
             f"[Projector] Failed to load image {image_path}: {e}"
@@ -510,7 +528,10 @@ def update_projector_image(dlp_obj, image_path):
         dlp_obj,
         dlp_obj.get(PROJECTOR_TEXTURE_INTERPOLATION_KEY, "Linear"),
     )
+    if settings is not None:
+        apply_projector_psf(dlp_obj, settings)
     validate_projector_projection_state(dlp_obj, image_path)
+    retire_source_image(old_image)
     print(
         f"[Projector] Updated image to: {os.path.basename(image_path)} "
         f"({int(img.size[0])}x{int(img.size[1])})"

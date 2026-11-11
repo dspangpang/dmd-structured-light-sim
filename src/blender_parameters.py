@@ -41,7 +41,9 @@ def save_blender_parameters(cfg, output_dir):
             entry["nodes"] = nodes(obj.data.node_tree)
         records[obj.name] = entry
     from variant_api import get_variant
-    payload = {"variant_metadata": get_variant().parameter_metadata(cfg),"schema": "core-sim.blender-native-parameters.v1",
+    from projector_psf import STATE_KEY
+    psf_states = [json.loads(obj[STATE_KEY]) for obj in scene.objects if obj.get(STATE_KEY)]
+    payload = {"projector_psf": psf_states, "variant_metadata": get_variant().parameter_metadata(cfg),"schema": "core-sim.blender-native-parameters.v1",
                "blender_version": bpy.app.version_string,
                "scene_config_sha256": cfg.APP_SCENE_CONFIG_SHA256,
                "object_axes": "Blender camera local -Z forward, +Y up",

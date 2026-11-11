@@ -21,19 +21,35 @@ from projector import _find_projector_spot
 
 
 def phase_sequence(projector, files):
-    """Packed textures and native animation curves work without Python callbacks."""
+    """Pack each core PSF field; native curves select phases without callbacks."""
+    from projector import update_projector_image
+    from projector_psf import validate_effective_psf
     tree = _find_projector_spot(projector).data.node_tree
     original = tree.nodes["Image Texture"]
     coordinates = original.inputs["Vector"].links[0].from_socket
     previous = None
+    states = []
     for i, path in enumerate(files):
-        node = original if i == 0 else tree.nodes.new("ShaderNodeTexImage")
-        node.label = f"Phase {i * 90} deg"
-        node.image = bpy.data.images.load(str(path), check_existing=True)
-        node.image.colorspace_settings.name = "Non-Color"
-        node.image.pack()
-        node.image.filepath = "//" + path.name
-        node.interpolation, node.extension = original.interpolation, original.extension
+        update_projector_image(projector, str(path))
+        state = validate_effective_psf(projector)
+        states.append(state)
+        native = original.image
+        native.pack()
+        native.filepath = "//" + path.name
+        native.use_fake_user = True
+        effective = tree.nodes[state["effective_source"]]
+        node = tree.nodes.new(effective.bl_idname)
+        node.name = f"PSF phase {i * 90} deg"
+        node.label = f"Phase {i * 90} deg; sigma={state['sigma_px']:g} source pixels"
+        if state["sigma_px"]:
+            node.node_tree = effective.node_tree
+            for image_node in node.node_tree.nodes:
+                if image_node.type == "TEX_IMAGE" and image_node.image and not image_node.image.packed_file:
+                    image_node.image.pack()
+        else:
+            node.image = native
+            node.interpolation = "Closest"
+            node.extension = original.extension
         tree.links.new(coordinates, node.inputs["Vector"])
         if previous is None:
             previous = node.outputs["Color"]
@@ -47,6 +63,7 @@ def phase_sequence(projector, files):
             mix.inputs[0].keyframe_insert("default_value", frame=frame)
         previous = mix.outputs["Color"]
     tree.links.new(previous, tree.nodes["Emission"].inputs["Color"])
+    projector["projector_psf_timeline"] = json.dumps(states, sort_keys=True)
 
 
 def housing_lights(scene):

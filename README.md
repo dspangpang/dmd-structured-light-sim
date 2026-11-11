@@ -1,5 +1,9 @@
 # DMD 结构光仿真环境
 
+公共投影仪 PSF 已统一到 core：默认 Gaussian σ=1 输入纹理像素、32 倍数值采样；
+通过 `render.projector_psf` 配置，`sigma_px=0` 选择清晰对照。详细接口与光学阶段见
+[公共投影仪模糊配置](PROJECTOR_PSF.md)。
+
 **简体中文** | [English](README.en.md)
 
 基于 Blender/Cycles 的单相机、单投影仪结构光仿真，支持**正交 DMD**和

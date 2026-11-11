@@ -1,6 +1,7 @@
 """Blender CLI: render options only; all device geometry comes from the App."""
 
 import sys
+import json
 from pathlib import Path
 
 from app_scene_config import apply_app_scene_config, scene_config_from_argv
@@ -155,6 +156,12 @@ def parse_blender_args():
             cfg.RENDER_RES_Y = int(height)
         elif key in {"--projector-texture-interpolation", "--projector-interpolation"}:
             cfg.PROJECTOR_TEXTURE_INTERPOLATION = value
+        elif key == "--projector-psf":
+            from projector_psf import parse_settings
+            settings = json.loads(value)
+            if not isinstance(settings, dict):
+                raise ValueError("--projector-psf requires a JSON object")
+            cfg.PROJECTOR_PSF = parse_settings(settings)
         elif key == "--use-projector-model":
             cfg.USE_PROJECTOR_MODEL = _parse_bool(value)
         elif key == "--use-camera-model":
@@ -194,6 +201,8 @@ def parse_blender_args():
             raise ValueError(f"Unknown Blender render option for {variant.name}: {key}")
         i += 2
 
+    if cfg.PROJECTOR_TEXTURE_INTERPOLATION != "Closest":
+        raise ValueError("Shared projector PSF requires Closest source cells; control blur with projector_psf.sigma_px")
     print(f"[CLI] Variant: {variant.name}")
     print("[CLI] Parsed config:", cfg)
     return cfg

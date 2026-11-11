@@ -178,6 +178,8 @@ def main():
         projectors = _projector_objects()
         if not projectors:
             raise RuntimeError("Projector objects not found after building the scene")
+        from projector_psf import configure_scene_recording
+        configure_scene_recording(sequence_dir)
         variant.after_scene_built(cfg, cameras, sequence_dir)
 
         if cfg.NO_RENDER:

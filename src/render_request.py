@@ -165,6 +165,7 @@ def _apply_render(cfg, render):
         "save_float_exr",
         "projector_energy",
         "projector_texture_interpolation",
+        "projector_psf",
         "bounce_level",
         "environment_light",
     }
@@ -192,6 +193,11 @@ def _apply_render(cfg, render):
     for request_key, (runtime_key, convert) in scalar_fields.items():
         if request_key in render:
             setattr(cfg, runtime_key, convert(render[request_key]))
+    if "projector_psf" in render:
+        from projector_psf import parse_settings
+        if not isinstance(render["projector_psf"], dict):
+            raise ValueError("render.projector_psf must be an object; sigma_px=0 selects the sharp control")
+        cfg.PROJECTOR_PSF = parse_settings(render["projector_psf"])
     if "resolution" in render:
         resolution = render["resolution"]
         if not isinstance(resolution, list) or len(resolution) != 2:
